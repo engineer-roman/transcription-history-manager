@@ -10,27 +10,27 @@ tasks:
   install:
     desc: Install project dependencies
     cmds:
-      - pip install -e .
+      - uv sync
 
   install-dev:
     desc: Install project dependencies including dev dependencies
     cmds:
-      - pip install -e ".[dev]"
+      - uv sync --dev
 
   dev:
     desc: Run the FastAPI development server with hot reload
     cmds:
-      - uvicorn {{.APP_MODULE}} --reload --host {{.HOST}} --port {{.PORT}}
+      - uv run uvicorn {{.APP_MODULE}} --reload --host {{.HOST}} --port {{.PORT}}
 
   run:
     desc: Run the FastAPI production server
     cmds:
-      - uvicorn {{.APP_MODULE}} --host {{.HOST}} --port {{.PORT}}
+      - uv run uvicorn {{.APP_MODULE}} --host {{.HOST}} --port {{.PORT}}
 
   test:
     desc: Run tests with pytest
     cmds:
-      - pytest
+      - uv run pytest
 
   test-cov:
     desc: Run tests with coverage report
@@ -40,27 +40,27 @@ tasks:
   lint:
     desc: Run ruff linter
     cmds:
-      - ruff check .
+      - uv run ruff check .
 
   lint-fix:
     desc: Run ruff linter and fix issues
     cmds:
-      - ruff check --fix .
+      - uv run ruff check --fix .
 
   format:
     desc: Format code with ruff
     cmds:
-      - ruff format .
+      - uv run ruff format .
 
   format-check:
     desc: Check code formatting without making changes
     cmds:
-      - ruff format --check .
+      - uv run ruff format --check .
 
   typecheck:
     desc: Run mypy type checker
     cmds:
-      - mypy app
+      - uv run mypy app
 
   check:
     desc: Run all checks (lint, format-check, typecheck, test)
