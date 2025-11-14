@@ -9,10 +9,16 @@ import aiofiles
 
 from app.models.transcription import TranscriptionMetadata
 from app.repositories.base import TranscriptionRepository
+from app.repositories.superwhisper_cache import SuperWhisperCacheRepo
 
 
 class SuperwhisperRepository(TranscriptionRepository):
     """Repository for Superwhisper transcription files."""
+
+    def __init__(self, base_directory: Path):
+        """Initialize repository with base directory and cache."""
+        super().__init__(base_directory)
+        self.cache = SuperWhisperCacheRepo()
 
     async def get_all_transcriptions(self) -> list[TranscriptionMetadata]:
         """
@@ -74,6 +80,40 @@ class SuperwhisperRepository(TranscriptionRepository):
             return None
 
         return await self._load_transcription_from_directory(subdir, timestamp)
+
+    async def get_transcription_by_recording_id(
+        self, recording_id: str
+    ) -> TranscriptionMetadata | None:
+        """
+        Retrieve a specific transcription by SuperWhisper recording ID.
+
+        This method uses the cache for faster lookups. If not found in cache,
+        it will scan the directory and populate the cache.
+
+        Args:
+            recording_id: SuperWhisper recording ID
+
+        Returns:
+            Transcription metadata or None if not found
+        """
+        # Try cache first
+        cache_entry = self.cache.get_by_recording_id(recording_id)
+        if cache_entry:
+            # Load from cached directory path
+            timestamp = int(cache_entry["internal_id"])
+            return await self.get_transcription_by_timestamp(timestamp)
+
+        # If not in cache, scan all transcriptions to populate cache
+        # This will also populate the cache with this recording if it exists
+        await self.get_all_transcriptions()
+
+        # Try cache again
+        cache_entry = self.cache.get_by_recording_id(recording_id)
+        if cache_entry:
+            timestamp = int(cache_entry["internal_id"])
+            return await self.get_transcription_by_timestamp(timestamp)
+
+        return None
 
     async def read_audio_file(self, transcription: TranscriptionMetadata) -> bytes:
         """
@@ -152,8 +192,10 @@ class SuperwhisperRepository(TranscriptionRepository):
         mode_name = None
         processing_time = None
 
+        recording_id = None
         if metadata_content:
             # SuperWhisper fields
+            recording_id = metadata_content.get("recordingId") or metadata_content.get("id")
             raw_transcription = metadata_content.get("rawResult")
             preprocessed_transcription = metadata_content.get("result")
             llm_transcription = metadata_content.get("llmResult")
@@ -187,11 +229,21 @@ class SuperwhisperRepository(TranscriptionRepository):
         # Prefer preprocessed > raw > llm
         transcription_text = preprocessed_transcription or raw_transcription or llm_transcription
 
+        # Cache the mapping between recording_id and timestamp
+        if recording_id:
+            self.cache.upsert(
+                recording_id=recording_id,
+                internal_id=str(timestamp),
+                directory_path=str(directory),
+                audio_hash=audio_hash,
+            )
+
         return TranscriptionMetadata(
             timestamp=timestamp,
             directory=directory,
             audio_file=audio_file if audio_file and audio_file.exists() else None,
             metadata_file=metadata_file if metadata_file.exists() else None,
+            recording_id=recording_id,
             raw_transcription=raw_transcription,
             preprocessed_transcription=preprocessed_transcription,
             llm_transcription=llm_transcription,

@@ -25,16 +25,25 @@ async function initializeApp() {
 // Setup Event Listeners
 function setupEventListeners() {
     const searchBtn = document.getElementById('searchBtn');
-    const clearSearchBtn = document.getElementById('clearSearchBtn');
+    const resetSearchBtn = document.getElementById('resetSearchBtn');
     const searchInput = document.getElementById('searchInput');
 
     searchBtn.addEventListener('click', handleSearch);
-    clearSearchBtn.addEventListener('click', clearSearch);
+    resetSearchBtn.addEventListener('click', clearSearch);
 
     // Search on Enter key
     searchInput.addEventListener('keypress', (e) => {
         if (e.key === 'Enter') {
             handleSearch();
+        }
+    });
+
+    // Show/hide reset button based on input
+    searchInput.addEventListener('input', (e) => {
+        if (e.target.value.trim()) {
+            resetSearchBtn.classList.add('visible');
+        } else {
+            resetSearchBtn.classList.remove('visible');
         }
     });
 }
@@ -110,10 +119,15 @@ function renderConversationDetails() {
 
     // Populate version dropdown
     const versionDropdown = clone.querySelector('#versionDropdown');
-    state.currentConversation.versions.forEach(version => {
+    const totalVersions = state.currentConversation.versions.length;
+    state.currentConversation.versions.forEach((version, index) => {
         const option = document.createElement('option');
         option.value = version.version_id;
-        option.textContent = `${formatDate(version.transcription.created_at)}${version.is_latest ? ' (Latest)' : ''}`;
+        const versionNumber = totalVersions - index;
+        const dateStr = formatDate(version.transcription.created_at);
+        option.textContent = version.is_latest
+            ? `Latest (v${versionNumber} - ${dateStr})`
+            : `v${versionNumber} - ${dateStr}`;
         if (version.version_id === state.currentVersion.version_id) {
             option.selected = true;
         }
@@ -190,10 +204,30 @@ function setupAudioPlayer() {
     backwardBtn.addEventListener('click', () => skip(-10));
     forwardBtn.addEventListener('click', () => skip(10));
 
-    // Timeline
+    // Timeline - use 'change' event to only seek when user releases
+    let isSeeking = false;
+    timelineSlider.addEventListener('mousedown', () => {
+        isSeeking = true;
+    });
+
     timelineSlider.addEventListener('input', (e) => {
+        if (isSeeking) {
+            // Update time display while dragging, but don't seek yet
+            const time = (e.target.value / 100) * state.audioElement.duration;
+            document.getElementById('currentTime').textContent = formatTime(time);
+        }
+    });
+
+    timelineSlider.addEventListener('change', (e) => {
         const time = (e.target.value / 100) * state.audioElement.duration;
-        state.audioElement.currentTime = time;
+        if (!isNaN(time) && isFinite(time)) {
+            state.audioElement.currentTime = time;
+        }
+        isSeeking = false;
+    });
+
+    timelineSlider.addEventListener('mouseup', () => {
+        isSeeking = false;
     });
 
     // Speed controls
@@ -208,9 +242,15 @@ function setupAudioPlayer() {
     });
 
     // Audio events
-    state.audioElement.addEventListener('timeupdate', updateTimeDisplay);
+    state.audioElement.addEventListener('timeupdate', () => {
+        if (!isSeeking) {
+            updateTimeDisplay();
+        }
+    });
     state.audioElement.addEventListener('loadedmetadata', () => {
         document.getElementById('totalTime').textContent = formatTime(state.audioElement.duration);
+        timelineSlider.max = 100;
+        timelineSlider.value = 0;
     });
     state.audioElement.addEventListener('play', () => {
         playPauseBtn.textContent = '⏸';
@@ -239,11 +279,21 @@ function togglePlayPause() {
 
 // Skip Forward/Backward
 function skip(seconds) {
-    state.audioElement.currentTime += seconds;
+    if (!state.audioElement || isNaN(state.audioElement.duration)) {
+        return;
+    }
+
+    const newTime = state.audioElement.currentTime + seconds;
+    // Clamp between 0 and duration
+    state.audioElement.currentTime = Math.max(0, Math.min(newTime, state.audioElement.duration));
 }
 
 // Jump to Timecode
 function jumpToTimecode(time) {
+    if (!state.audioElement || isNaN(state.audioElement.duration)) {
+        return;
+    }
+
     state.audioElement.currentTime = time;
     state.audioElement.play();
 }
@@ -299,9 +349,6 @@ async function handleSearch() {
 
         state.searchResults = await response.json();
         renderSearchResults();
-
-        // Show clear button
-        document.getElementById('clearSearchBtn').style.display = 'inline-block';
     } catch (error) {
         console.error('Error searching:', error);
         showError('Search failed. Please try again.');
@@ -339,10 +386,13 @@ function clearSearch() {
     state.isSearching = false;
     state.searchResults = [];
 
-    document.getElementById('searchInput').value = '';
-    document.getElementById('clearSearchBtn').style.display = 'none';
+    const searchInput = document.getElementById('searchInput');
+    const resetSearchBtn = document.getElementById('resetSearchBtn');
 
-    renderConversationsList(state.conversations);
+    searchInput.value = '';
+    resetSearchBtn.classList.remove('visible');
+
+    loadConversations();
 }
 
 // Highlight Active Conversation

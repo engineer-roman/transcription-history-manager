@@ -256,7 +256,7 @@ class TranscriptionService:
         """
         Generate a title for the conversation.
 
-        Prefers preprocessed transcription over raw or LLM versions.
+        Prefers LLM output over raw transcription.
 
         Args:
             transcription: Transcription metadata
@@ -265,11 +265,11 @@ class TranscriptionService:
             Conversation title
         """
         # Try to extract title from transcription
-        # Prefer preprocessed > raw > llm > legacy field
+        # Prefer llm > raw > preprocessed > legacy field
         text = (
-            transcription.preprocessed_transcription
+            transcription.llm_transcription
             or transcription.raw_transcription
-            or transcription.llm_transcription
+            or transcription.preprocessed_transcription
             or transcription.transcription_text
         )
 

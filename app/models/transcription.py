@@ -30,6 +30,7 @@ class TranscriptionMetadata:
     llm_output: str | None = None
 
     # Metadata from SuperWhisper
+    recording_id: str | None = None  # SuperWhisper recording ID
     duration: float | None = None  # Duration in milliseconds
     language: str | None = None  # Language code (e.g., "ru")
     model_name: str | None = None  # STT model name (e.g., "Ultra V3 Turbo")

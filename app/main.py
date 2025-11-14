@@ -9,12 +9,19 @@ from fastapi.staticfiles import StaticFiles
 
 from app.api.routes import conversations, health
 from app.core.config import settings
+from app.db import init_db
 
 app = FastAPI(
     title=settings.app_name,
     version=settings.app_version,
     debug=settings.debug,
 )
+
+
+@app.on_event("startup")
+async def startup_event():
+    """Initialize database on application startup."""
+    init_db()
 
 # Add CORS middleware
 app.add_middleware(
