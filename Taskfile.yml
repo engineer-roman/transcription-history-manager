@@ -1,0 +1,117 @@
+version: '3'
+
+vars:
+  PYTHON: python3.13
+  APP_MODULE: app.main:app
+  HOST: 0.0.0.0
+  PORT: 8000
+
+tasks:
+  install:
+    desc: Install project dependencies
+    cmds:
+      - pip install -e .
+
+  install-dev:
+    desc: Install project dependencies including dev dependencies
+    cmds:
+      - pip install -e ".[dev]"
+
+  dev:
+    desc: Run the FastAPI development server with hot reload
+    cmds:
+      - uvicorn {{.APP_MODULE}} --reload --host {{.HOST}} --port {{.PORT}}
+
+  run:
+    desc: Run the FastAPI production server
+    cmds:
+      - uvicorn {{.APP_MODULE}} --host {{.HOST}} --port {{.PORT}}
+
+  test:
+    desc: Run tests with pytest
+    cmds:
+      - pytest
+
+  test-cov:
+    desc: Run tests with coverage report
+    cmds:
+      - pytest --cov=app --cov-report=html --cov-report=term
+
+  lint:
+    desc: Run ruff linter
+    cmds:
+      - ruff check .
+
+  lint-fix:
+    desc: Run ruff linter and fix issues
+    cmds:
+      - ruff check --fix .
+
+  format:
+    desc: Format code with ruff
+    cmds:
+      - ruff format .
+
+  format-check:
+    desc: Check code formatting without making changes
+    cmds:
+      - ruff format --check .
+
+  typecheck:
+    desc: Run mypy type checker
+    cmds:
+      - mypy app
+
+  check:
+    desc: Run all checks (lint, format-check, typecheck, test)
+    cmds:
+      - task: lint
+      - task: format-check
+      - task: typecheck
+      - task: test
+
+  docker-build:
+    desc: Build Docker image
+    cmds:
+      - docker build -t transcription-history-manager:latest .
+
+  docker-run:
+    desc: Run Docker container
+    cmds:
+      - docker run -p {{.PORT}}:{{.PORT}} transcription-history-manager:latest
+
+  docker-up:
+    desc: Start services with docker-compose
+    cmds:
+      - docker-compose up -d
+
+  docker-down:
+    desc: Stop services with docker-compose
+    cmds:
+      - docker-compose down
+
+  docker-logs:
+    desc: View docker-compose logs
+    cmds:
+      - docker-compose logs -f
+
+  clean:
+    desc: Clean up temporary files and caches
+    cmds:
+      - find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
+      - find . -type d -name ".pytest_cache" -exec rm -rf {} + 2>/dev/null || true
+      - find . -type d -name ".ruff_cache" -exec rm -rf {} + 2>/dev/null || true
+      - find . -type d -name ".mypy_cache" -exec rm -rf {} + 2>/dev/null || true
+      - find . -type d -name "*.egg-info" -exec rm -rf {} + 2>/dev/null || true
+      - find . -type d -name "htmlcov" -exec rm -rf {} + 2>/dev/null || true
+      - rm -rf dist build 2>/dev/null || true
+
+  shell:
+    desc: Start Python REPL with app context
+    cmds:
+      - "{{.PYTHON}}"
+
+  help:
+    desc: Show available tasks
+    cmds:
+      - task --list
