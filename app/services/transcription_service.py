@@ -76,18 +76,48 @@ class TranscriptionService:
                 trans = version.transcription
 
                 # Search in raw transcription
-                if trans.transcription_text and query_lower in trans.transcription_text.lower():
-                    # Extract context around the match
-                    text = trans.transcription_text
+                if trans.raw_transcription and query_lower in trans.raw_transcription.lower():
+                    text = trans.raw_transcription
                     match_contexts = self._extract_match_contexts(text, query, context_chars=100)
-                    matches.extend(match_contexts)
+                    matches.extend([f"Raw: {ctx}" for ctx in match_contexts])
 
-                # Search in LLM output
-                if trans.llm_output and query_lower in trans.llm_output.lower():
+                # Search in preprocessed transcription
+                if (
+                    trans.preprocessed_transcription
+                    and query_lower in trans.preprocessed_transcription.lower()
+                ):
+                    text = trans.preprocessed_transcription
+                    match_contexts = self._extract_match_contexts(text, query, context_chars=100)
+                    matches.extend([f"Preprocessed: {ctx}" for ctx in match_contexts])
+
+                # Search in LLM transcription
+                if trans.llm_transcription and query_lower in trans.llm_transcription.lower():
                     match_contexts = self._extract_match_contexts(
-                        trans.llm_output, query, context_chars=100
+                        trans.llm_transcription, query, context_chars=100
                     )
                     matches.extend([f"LLM: {ctx}" for ctx in match_contexts])
+
+                # Search in legacy fields for backward compatibility
+                if trans.transcription_text and query_lower in trans.transcription_text.lower():
+                    # Skip if already covered by the new fields
+                    if not (
+                        trans.raw_transcription
+                        or trans.preprocessed_transcription
+                        or trans.llm_transcription
+                    ):
+                        text = trans.transcription_text
+                        match_contexts = self._extract_match_contexts(
+                            text, query, context_chars=100
+                        )
+                        matches.extend(match_contexts)
+
+                if trans.llm_output and query_lower in trans.llm_output.lower():
+                    # Skip if already covered by llm_transcription
+                    if not trans.llm_transcription:
+                        match_contexts = self._extract_match_contexts(
+                            trans.llm_output, query, context_chars=100
+                        )
+                        matches.extend([f"LLM: {ctx}" for ctx in match_contexts])
 
             if matches:
                 results.append((conversation, matches))
@@ -205,7 +235,8 @@ class TranscriptionService:
         """
         Generate a unique conversation ID.
 
-        TODO: Enhance to group re-transcriptions together
+        Uses audio hash to group re-processed versions of the same recording.
+        If audio hash is not available, falls back to timestamp.
 
         Args:
             transcription: Transcription metadata
@@ -213,14 +244,19 @@ class TranscriptionService:
         Returns:
             Conversation ID
         """
-        # For now, use timestamp as unique ID
+        # Use audio hash as conversation ID to group versions
+        if transcription.audio_hash:
+            return transcription.audio_hash
+
+        # Fallback to timestamp if no audio hash available
         # This means each transcription is its own conversation
-        # Later, we can group by audio hash or metadata
         return str(transcription.timestamp)
 
     def _generate_conversation_title(self, transcription: TranscriptionMetadata) -> str:
         """
         Generate a title for the conversation.
+
+        Prefers preprocessed transcription over raw or LLM versions.
 
         Args:
             transcription: Transcription metadata
@@ -228,10 +264,18 @@ class TranscriptionService:
         Returns:
             Conversation title
         """
-        # Try to extract title from transcription or metadata
-        if transcription.transcription_text:
+        # Try to extract title from transcription
+        # Prefer preprocessed > raw > llm > legacy field
+        text = (
+            transcription.preprocessed_transcription
+            or transcription.raw_transcription
+            or transcription.llm_transcription
+            or transcription.transcription_text
+        )
+
+        if text:
             # Use first 50 characters of transcription
-            text = transcription.transcription_text.strip()
+            text = text.strip()
             if len(text) > 50:
                 return text[:50] + "..."
             return text

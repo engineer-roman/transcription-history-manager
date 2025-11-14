@@ -1,5 +1,6 @@
 """Superwhisper transcription repository implementation."""
 
+import hashlib
 import json
 from datetime import datetime
 from pathlib import Path
@@ -101,6 +102,10 @@ class SuperwhisperRepository(TranscriptionRepository):
         """
         Load transcription metadata from a directory.
 
+        SuperWhisper structure:
+        - Directory name: Unix timestamp (e.g., 1762651071)
+        - Files: meta.json, output.wav
+
         Args:
             directory: Directory containing transcription files
             timestamp: Unix timestamp
@@ -108,16 +113,24 @@ class SuperwhisperRepository(TranscriptionRepository):
         Returns:
             TranscriptionMetadata or None if loading fails
         """
-        # Look for audio file (try different extensions)
-        audio_file = None
-        for extension in [".wav", ".mp3", ".m4a", ".ogg"]:
-            potential_audio = directory / f"audio{extension}"
-            if potential_audio.exists():
-                audio_file = potential_audio
-                break
+        # Look for audio file - SuperWhisper uses output.wav
+        audio_file = directory / "output.wav"
+        if not audio_file.exists():
+            # Fallback to legacy naming or other extensions
+            for filename in ["audio.wav", "output.mp3", "audio.mp3", "output.m4a", "audio.m4a"]:
+                potential_audio = directory / filename
+                if potential_audio.exists():
+                    audio_file = potential_audio
+                    break
+            else:
+                audio_file = None
 
-        # Look for metadata file
-        metadata_file = directory / "metadata.json"
+        # Look for metadata file - SuperWhisper uses meta.json
+        metadata_file = directory / "meta.json"
+        if not metadata_file.exists():
+            # Fallback to legacy naming
+            metadata_file = directory / "metadata.json"
+
         metadata_content = None
         if metadata_file.exists():
             try:
@@ -127,29 +140,95 @@ class SuperwhisperRepository(TranscriptionRepository):
             except (json.JSONDecodeError, OSError):
                 pass
 
-        # Extract transcription data from metadata
+        # Extract transcription data from SuperWhisper meta.json
         raw_transcription = None
-        timecodes = None
-        llm_output = None
+        preprocessed_transcription = None
+        llm_transcription = None
+        segments = None
         duration = None
+        language = None
+        model_name = None
+        language_model_name = None
+        mode_name = None
+        processing_time = None
 
         if metadata_content:
-            raw_transcription = metadata_content.get("transcription")
-            timecodes = metadata_content.get("timecodes")
-            llm_output = metadata_content.get("llm_output")
+            # SuperWhisper fields
+            raw_transcription = metadata_content.get("rawResult")
+            preprocessed_transcription = metadata_content.get("result")
+            llm_transcription = metadata_content.get("llmResult")
+            segments = metadata_content.get("segments")
             duration = metadata_content.get("duration")
+            language = metadata_content.get("languageSelected")
+            model_name = metadata_content.get("modelName")
+            language_model_name = metadata_content.get("languageModelName")
+            mode_name = metadata_content.get("modeName")
+            processing_time = metadata_content.get("processingTime")
 
-        # Create TranscriptionMetadata
-        created_at = datetime.fromtimestamp(timestamp)
+        # Calculate audio hash for version detection
+        audio_hash = None
+        if audio_file and audio_file.exists():
+            audio_hash = await self._calculate_audio_hash(audio_file)
+
+        # Parse datetime from meta.json or use timestamp
+        created_at = None
+        if metadata_content and "datetime" in metadata_content:
+            try:
+                # SuperWhisper format: "2025-11-13T01:42:15"
+                datetime_str = metadata_content["datetime"]
+                created_at = datetime.fromisoformat(datetime_str)
+            except (ValueError, TypeError):
+                pass
+
+        if not created_at:
+            created_at = datetime.fromtimestamp(timestamp)
+
+        # Determine best transcription_text for backward compatibility
+        # Prefer preprocessed > raw > llm
+        transcription_text = preprocessed_transcription or raw_transcription or llm_transcription
 
         return TranscriptionMetadata(
             timestamp=timestamp,
             directory=directory,
-            audio_file=audio_file,
+            audio_file=audio_file if audio_file and audio_file.exists() else None,
             metadata_file=metadata_file if metadata_file.exists() else None,
-            transcription_text=raw_transcription,
-            transcription_with_timecodes=timecodes,
-            llm_output=llm_output,
+            raw_transcription=raw_transcription,
+            preprocessed_transcription=preprocessed_transcription,
+            llm_transcription=llm_transcription,
+            transcription_text=transcription_text,
+            segments=segments,
+            transcription_with_timecodes=segments,  # Legacy field
+            llm_output=llm_transcription,  # Legacy field
             duration=duration,
+            language=language,
+            model_name=model_name,
+            language_model_name=language_model_name,
+            mode_name=mode_name,
+            processing_time=processing_time,
+            audio_hash=audio_hash,
             created_at=created_at,
         )
+
+    async def _calculate_audio_hash(self, audio_file: Path) -> str:
+        """
+        Calculate SHA256 hash of audio file for version detection.
+
+        This allows us to identify when different recordings are re-processed
+        versions of the same audio.
+
+        Args:
+            audio_file: Path to audio file
+
+        Returns:
+            SHA256 hash as hex string
+        """
+        sha256_hash = hashlib.sha256()
+        try:
+            async with aiofiles.open(audio_file, "rb") as f:
+                # Read in chunks to handle large files
+                while chunk := await f.read(8192):
+                    sha256_hash.update(chunk)
+            return sha256_hash.hexdigest()
+        except OSError:
+            # If we can't read the file, return empty hash
+            return ""
