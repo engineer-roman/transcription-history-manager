@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Transcription History Manager</title>
+    <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+    <!-- Top Search Bar (Always Visible) -->
+    <header class="top-bar">
+        <div class="container">
+            <h1>Transcription History</h1>
+            <div class="search-container">
+                <input
+                    type="text"
+                    id="searchInput"
+                    placeholder="Search transcriptions..."
+                    class="search-input"
+                >
+                <button id="searchBtn" class="btn btn-primary">Search</button>
+                <button id="clearSearchBtn" class="btn btn-secondary" style="display: none;">Clear</button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <div class="main-container">
+        <!-- Left Panel: Conversations List -->
+        <aside class="conversations-panel">
+            <div id="conversationsList" class="conversations-list">
+                <div class="loading">Loading conversations...</div>
+            </div>
+        </aside>
+
+        <!-- Right Panel: Conversation Details -->
+        <main class="details-panel">
+            <div id="conversationDetails" class="conversation-details">
+                <div class="empty-state">
+                    <p>Select a conversation to view details</p>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Conversation Detail Template -->
+    <template id="conversationDetailTemplate">
+        <div class="detail-header">
+            <h2 class="conversation-title"></h2>
+            <div class="version-selector">
+                <label for="versionDropdown">Version:</label>
+                <select id="versionDropdown" class="version-dropdown"></select>
+            </div>
+        </div>
+
+        <!-- Audio Player -->
+        <div class="audio-player">
+            <audio id="audioElement" preload="metadata"></audio>
+            <div class="player-controls">
+                <button id="playPauseBtn" class="btn btn-icon">▶</button>
+                <button id="backwardBtn" class="btn btn-icon" title="Back 10s">⏪</button>
+                <button id="forwardBtn" class="btn btn-icon" title="Forward 10s">⏩</button>
+                <div class="time-display">
+                    <span id="currentTime">0:00</span> / <span id="totalTime">0:00</span>
+                </div>
+                <div class="speed-controls">
+                    <label>Speed:</label>
+                    <button class="speed-btn" data-speed="0.75">0.75x</button>
+                    <button class="speed-btn active" data-speed="1">1x</button>
+                    <button class="speed-btn" data-speed="1.25">1.25x</button>
+                    <button class="speed-btn" data-speed="1.5">1.5x</button>
+                    <button class="speed-btn" data-speed="2">2x</button>
+                </div>
+            </div>
+            <div class="timeline">
+                <input
+                    type="range"
+                    id="timelineSlider"
+                    class="timeline-slider"
+                    min="0"
+                    max="100"
+                    value="0"
+                >
+            </div>
+        </div>
+
+        <!-- Tabs -->
+        <div class="tabs">
+            <button class="tab-btn active" data-tab="raw">Raw Transcription</button>
+            <button class="tab-btn" data-tab="timecodes">Timecodes</button>
+            <button class="tab-btn" data-tab="llm">LLM Output</button>
+        </div>
+
+        <!-- Tab Content -->
+        <div class="tab-content">
+            <div id="rawTab" class="tab-pane active">
+                <div class="transcription-content"></div>
+            </div>
+            <div id="timecodesTab" class="tab-pane">
+                <div class="timecodes-list"></div>
+            </div>
+            <div id="llmTab" class="tab-pane">
+                <div class="llm-content"></div>
+            </div>
+        </div>
+    </template>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>

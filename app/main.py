@@ -1,9 +1,13 @@
 """Main FastAPI application."""
 
+from pathlib import Path
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
-from app.api.routes import health
+from app.api.routes import conversations, health
 from app.core.config import settings
 
 app = FastAPI(
@@ -23,13 +27,28 @@ app.add_middleware(
 
 # Include routers
 app.include_router(health.router, prefix=settings.api_prefix, tags=["health"])
+app.include_router(conversations.router, prefix=settings.api_prefix, tags=["conversations"])
+
+# Mount static files directory
+static_dir = Path(__file__).parent / "static"
+if static_dir.exists():
+    app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 
 
 @app.get("/")
-async def root() -> dict[str, str]:
-    """Root endpoint."""
-    return {
-        "message": f"Welcome to {settings.app_name}",
-        "version": settings.app_version,
-        "docs": "/docs",
-    }
+async def root() -> FileResponse:
+    """Serve the main application page."""
+    index_path = Path(__file__).parent / "static" / "index.html"
+    if index_path.exists():
+        return FileResponse(index_path)
+
+    # Fallback if static files not found
+    from fastapi.responses import JSONResponse
+
+    return JSONResponse(
+        {
+            "message": f"Welcome to {settings.app_name}",
+            "version": settings.app_version,
+            "docs": "/docs",
+        }
+    )

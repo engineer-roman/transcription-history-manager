@@ -31,5 +31,8 @@ class Settings(BaseSettings):
     cors_allow_methods: list[str] = ["*"]
     cors_allow_headers: list[str] = ["*"]
 
+    # Transcription Provider Settings
+    superwhisper_directory: str = "./data/superwhisper"
+
 
 settings = Settings()
