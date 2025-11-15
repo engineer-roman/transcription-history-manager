@@ -416,6 +416,14 @@ function skip(seconds) {
     const clampedTime = Math.max(0, Math.min(newTime, state.audioElement.duration));
 
     console.log('[Audio Player] Skip:', seconds, 'seconds - from:', oldTime, 'to:', clampedTime, 'readyState:', state.audioElement.readyState);
+    console.log('[Audio Player] Audio element details:', {
+        src: state.audioElement.src,
+        duration: state.audioElement.duration,
+        networkState: state.audioElement.networkState,
+        readyState: state.audioElement.readyState,
+        paused: state.audioElement.paused,
+        error: state.audioElement.error
+    });
 
     // Log seekable ranges for debugging (but don't block on them)
     if (state.audioElement.seekable && state.audioElement.seekable.length > 0) {
@@ -428,10 +436,18 @@ function skip(seconds) {
         console.log('[Audio Player] No seekable ranges available yet');
     }
 
+    console.log('[Audio Player] BEFORE setting currentTime:', state.audioElement.currentTime);
+    console.log('[Audio Player] ATTEMPTING to set currentTime to:', clampedTime);
+
     try {
         // Set currentTime and let the browser handle the seek
         state.audioElement.currentTime = clampedTime;
-        console.log('[Audio Player] After skip, currentTime:', state.audioElement.currentTime);
+        console.log('[Audio Player] IMMEDIATELY AFTER set, currentTime:', state.audioElement.currentTime);
+
+        // Check again after a tick
+        setTimeout(() => {
+            console.log('[Audio Player] After setTimeout, currentTime:', state.audioElement.currentTime);
+        }, 0);
     } catch (e) {
         console.error('[Audio Player] Error during skip:', e);
     }

@@ -225,6 +225,43 @@ class TranscriptionService:
 
         return await self.repository.read_audio_file(version.transcription)
 
+    async def get_audio_file_path(self, conversation_id: str, version_id: str) -> str:
+        """
+        Get audio file path for a specific conversation version.
+
+        Args:
+            conversation_id: Conversation identifier
+            version_id: Version identifier (timestamp)
+
+        Returns:
+            Audio file path
+
+        Raises:
+            FileNotFoundError: If conversation or version not found
+        """
+        conversation = await self.get_conversation_by_id(conversation_id)
+        if not conversation:
+            raise FileNotFoundError(f"Conversation {conversation_id} not found")
+
+        # Find the specific version
+        version = None
+        for v in conversation.versions:
+            if v.version_id == version_id:
+                version = v
+                break
+
+        if not version:
+            raise FileNotFoundError(
+                f"Version {version_id} not found in conversation {conversation_id}"
+            )
+
+        if not version.transcription.audio_file:
+            raise FileNotFoundError(
+                f"No audio file found for version {version_id}"
+            )
+
+        return str(version.transcription.audio_file)
+
     def _group_transcriptions_into_conversations(
         self, transcriptions: list[TranscriptionMetadata]
     ) -> list[Conversation]:

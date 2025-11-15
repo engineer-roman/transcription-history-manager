@@ -3,7 +3,7 @@
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from fastapi.responses import Response
+from fastapi.responses import FileResponse, Response
 
 from app.api.dependencies import get_transcription_service
 from app.schemas.transcription import (
@@ -162,7 +162,7 @@ async def get_audio_file(
     conversation_id: str,
     version_id: str,
     service: Annotated[TranscriptionService, Depends(get_transcription_service)],
-) -> Response:
+) -> FileResponse:
     """
     Get audio file for a specific conversation version.
 
@@ -171,17 +171,15 @@ async def get_audio_file(
         version_id: Version identifier (timestamp)
 
     Returns:
-        Audio file (WAV format)
+        Audio file (WAV format) with range request support for seeking
     """
     try:
-        audio_data = await service.get_audio_file(conversation_id, version_id)
+        audio_file_path = await service.get_audio_file_path(conversation_id, version_id)
     except FileNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
 
-    return Response(
-        content=audio_data,
+    return FileResponse(
+        path=audio_file_path,
         media_type="audio/wav",
-        headers={
-            "Content-Disposition": f'inline; filename="audio_{version_id}.wav"',
-        },
+        filename=f"audio_{version_id}.wav",
     )
