@@ -3,6 +3,7 @@
 import hashlib
 import json
 from datetime import datetime
+from logly import logger
 from pathlib import Path
 
 import aiofiles
@@ -18,7 +19,7 @@ class SuperwhisperRepository(TranscriptionRepository):
     def __init__(self, base_directory: Path):
         """Initialize repository with base directory and cache."""
         super().__init__(base_directory)
-        self.cache = SuperWhisperCacheRepo()
+        self._cache = SuperWhisperCacheRepo()
 
     async def get_all_transcriptions(self) -> list[TranscriptionMetadata]:
         """
@@ -97,7 +98,8 @@ class SuperwhisperRepository(TranscriptionRepository):
             Transcription metadata or None if not found
         """
         # Try cache first
-        cache_entry = self.cache.get_by_recording_id(recording_id)
+        cache_entry = self._cache.get_by_recording_id(recording_id)
+        logger.info(f"Recording cache state {recording_id}: {bool(cache_entry)}")
         if cache_entry:
             # Load from cached directory path
             timestamp = int(cache_entry["internal_id"])
@@ -108,7 +110,7 @@ class SuperwhisperRepository(TranscriptionRepository):
         await self.get_all_transcriptions()
 
         # Try cache again
-        cache_entry = self.cache.get_by_recording_id(recording_id)
+        cache_entry = self._cache.get_by_recording_id(recording_id)
         if cache_entry:
             timestamp = int(cache_entry["internal_id"])
             return await self.get_transcription_by_timestamp(timestamp)
@@ -236,7 +238,7 @@ class SuperwhisperRepository(TranscriptionRepository):
 
         # Cache the mapping between recording_id and timestamp
         if recording_id:
-            self.cache.upsert(
+            self._cache.upsert(
                 recording_id=recording_id,
                 internal_id=str(timestamp),
                 directory_path=str(directory),

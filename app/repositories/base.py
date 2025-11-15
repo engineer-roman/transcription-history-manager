@@ -29,6 +29,12 @@ class TranscriptionRepository(ABC):
         pass
 
     @abstractmethod
+    async def get_transcription_by_recording_id(
+        self, recording_id: str
+    ) -> TranscriptionMetadata | None:
+        pass
+
+    @abstractmethod
     async def get_transcription_by_timestamp(
         self, timestamp: int
     ) -> TranscriptionMetadata | None:

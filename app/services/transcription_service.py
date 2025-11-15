@@ -1,6 +1,5 @@
 """Service layer for transcription business logic."""
 
-import hashlib
 from datetime import datetime
 
 from app.models.transcription import AudioVersion, Conversation, TranscriptionMetadata
@@ -43,11 +42,9 @@ class TranscriptionService:
         Returns:
             Conversation or None if not found
         """
-        conversations = await self.get_all_conversations()
-        for conv in conversations:
-            if conv.conversation_id == conversation_id:
-                return conv
-        return None
+        convo = await self.repository.get_transcription_by_recording_id(conversation_id)
+
+
 
     async def search_conversations(self, query: str) -> list[tuple[Conversation, list[str]]]:
         """
