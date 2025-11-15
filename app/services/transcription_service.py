@@ -38,71 +38,82 @@ class TranscriptionService:
 
     async def get_conversation_by_id(self, conversation_id: str) -> Conversation | None:
         """
-        Get a specific conversation by ID.
+        Get a specific conversation by ID without loading all conversations.
 
-        This method tries to use the cache when possible. It attempts to
-        find all transcriptions with the same audio_hash (conversation_id)
-        and build a complete conversation object with all versions.
+        This method ONLY loads the specific conversation requested using the cache.
+        It never falls back to loading all conversations.
 
         Args:
-            conversation_id: Conversation identifier (typically audio hash or timestamp)
+            conversation_id: Conversation identifier (audio_hash or recording_id/timestamp)
 
         Returns:
             Conversation or None if not found
         """
         logger.debug(f"Getting conversation by ID: {conversation_id}")
 
-        # Try to get from cache first if repository supports it
-        if hasattr(self.repository, '_cache'):
-            # Get all cache entries with this audio_hash
-            all_cache_entries = self.repository._cache.get_all()
-            matching_entries = [
-                entry for entry in all_cache_entries
-                if entry.get("audio_hash") == conversation_id
-            ]
+        if not hasattr(self.repository, '_cache'):
+            logger.warning("Repository does not support caching, falling back to full load")
+            conversations = await self.get_all_conversations()
+            for conv in conversations:
+                if conv.conversation_id == conversation_id:
+                    return conv
+            return None
 
-            if matching_entries:
-                logger.debug(f"Found {len(matching_entries)} transcriptions for conversation {conversation_id} in cache")
+        # Strategy 1: Try as audio_hash (most common case - groups multiple versions)
+        matching_entries = self.repository._cache.get_by_audio_hash(conversation_id)
+        if matching_entries:
+            logger.debug(f"Found {len(matching_entries)} version(s) for audio_hash {conversation_id}")
 
-                # Load all transcriptions for this conversation
-                transcriptions = []
-                for entry in matching_entries:
-                    timestamp = int(entry["internal_id"])
-                    transcription = await self.repository.get_transcription_by_timestamp(timestamp)
-                    if transcription:
-                        transcriptions.append(transcription)
+            # Load all transcriptions for this conversation
+            transcriptions = []
+            for entry in matching_entries:
+                timestamp = int(entry["internal_id"])
+                transcription = await self.repository.get_transcription_by_timestamp(timestamp)
+                if transcription:
+                    transcriptions.append(transcription)
 
-                if transcriptions:
-                    # Build complete conversation from all versions
-                    conversations = self._group_transcriptions_into_conversations(transcriptions)
-                    if conversations:
-                        logger.debug(f"Built conversation {conversation_id} from cache with {len(transcriptions)} version(s)")
-                        return conversations[0]
+            if transcriptions:
+                # Build complete conversation from all versions
+                conversations = self._group_transcriptions_into_conversations(transcriptions)
+                if conversations:
+                    logger.debug(f"Built conversation from {len(transcriptions)} version(s)")
+                    return conversations[0]
 
-            # Also check if conversation_id is a recording_id (single timestamp)
-            cache_entry = self.repository._cache.get_by_recording_id(conversation_id)
-            if cache_entry:
-                logger.debug(f"Found single recording for {conversation_id} in cache")
-                audio_hash = cache_entry.get("audio_hash")
-                if audio_hash:
-                    # Recursively call with audio_hash to get full conversation
-                    return await self.get_conversation_by_id(audio_hash)
-                else:
-                    # No audio_hash, this is a standalone recording
-                    timestamp = int(cache_entry["internal_id"])
-                    transcription = await self.repository.get_transcription_by_timestamp(timestamp)
-                    if transcription:
-                        conversations = self._group_transcriptions_into_conversations([transcription])
-                        if conversations:
-                            return conversations[0]
+        # Strategy 2: Try as recording_id (timestamp or recordingId)
+        cache_entry = self.repository._cache.get_by_recording_id(conversation_id)
+        if cache_entry:
+            logger.debug(f"Found cache entry for recording_id: {conversation_id}")
+            audio_hash = cache_entry.get("audio_hash")
 
-        # Fall back to loading all conversations
-        logger.debug(f"Loading all conversations to find {conversation_id}")
-        conversations = await self.get_all_conversations()
-        for conv in conversations:
-            if conv.conversation_id == conversation_id:
-                logger.debug(f"Found conversation {conversation_id}")
-                return conv
+            # If this entry has an audio_hash, load all versions with that hash
+            if audio_hash:
+                logger.debug(f"Recording has audio_hash {audio_hash}, loading all versions")
+                # Use Strategy 1 to get all versions
+                return await self.get_conversation_by_id(audio_hash)
+
+            # No audio_hash means standalone recording
+            logger.debug("No audio_hash, loading as standalone recording")
+            timestamp = int(cache_entry["internal_id"])
+            transcription = await self.repository.get_transcription_by_timestamp(timestamp)
+            if transcription:
+                conversations = self._group_transcriptions_into_conversations([transcription])
+                if conversations:
+                    return conversations[0]
+
+        # Strategy 3: Try as internal_id (timestamp)
+        cache_entry = self.repository._cache.get_by_internal_id(conversation_id)
+        if cache_entry:
+            logger.debug(f"Found cache entry for internal_id: {conversation_id}")
+            timestamp = int(cache_entry["internal_id"])
+            transcription = await self.repository.get_transcription_by_timestamp(timestamp)
+            if transcription:
+                # Check if this has an audio_hash to load all versions
+                if transcription.audio_hash:
+                    return await self.get_conversation_by_id(transcription.audio_hash)
+                # Standalone
+                conversations = self._group_transcriptions_into_conversations([transcription])
+                if conversations:
+                    return conversations[0]
 
         logger.warning(f"Conversation not found: {conversation_id}")
         return None

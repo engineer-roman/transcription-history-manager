@@ -335,14 +335,17 @@ class SuperwhisperRepository(TranscriptionRepository):
         # Prefer preprocessed > raw > llm
         transcription_text = preprocessed_transcription or raw_transcription or llm_transcription
 
-        # Cache the mapping between recording_id and timestamp
-        if recording_id:
-            self._cache.upsert(
-                recording_id=recording_id,
-                internal_id=str(timestamp),
-                directory_path=str(directory),
-                audio_hash=audio_hash,
-            )
+        # ALWAYS cache the mapping - use timestamp as fallback if no recording_id
+        # This ensures the cache is populated for all transcriptions
+        cache_recording_id = recording_id if recording_id else str(timestamp)
+        logger.debug(f"Caching transcription: recording_id={cache_recording_id}, timestamp={timestamp}, audio_hash={audio_hash}")
+
+        self._cache.upsert(
+            recording_id=cache_recording_id,
+            internal_id=str(timestamp),
+            directory_path=str(directory),
+            audio_hash=audio_hash,
+        )
 
         return TranscriptionMetadata(
             timestamp=timestamp,

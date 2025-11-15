@@ -71,6 +71,34 @@ class SuperWhisperCacheRepo:
             return dict(row)
         return None
 
+    def get_by_audio_hash(self, audio_hash: str) -> list[dict]:
+        """
+        Get all cache entries with the given audio hash.
+
+        Args:
+            audio_hash: Audio file hash
+
+        Returns:
+            List of cache entry dicts with matching audio_hash
+        """
+        conn = get_db()
+        cursor = conn.cursor()
+
+        cursor.execute(
+            """
+            SELECT recording_id, internal_id, directory_path, audio_hash, created_at, updated_at
+            FROM superwhisper_cache
+            WHERE audio_hash = ?
+            ORDER BY created_at DESC
+            """,
+            (audio_hash,),
+        )
+
+        rows = cursor.fetchall()
+        conn.close()
+
+        return [dict(row) for row in rows]
+
     def get_all(self) -> list[dict]:
         """
         Get all cache entries.

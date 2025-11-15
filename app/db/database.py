@@ -4,8 +4,9 @@ import sqlite3
 from pathlib import Path
 from typing import Optional
 
-# Database file path
-DB_PATH = Path("transcription_cache.db")
+# Database file path - store in project root
+# Go up from app/db/database.py to project root
+DB_PATH = Path(__file__).parent.parent.parent / "transcription_cache.db"
 
 
 def get_db() -> sqlite3.Connection:
