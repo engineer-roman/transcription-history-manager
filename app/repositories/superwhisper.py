@@ -28,6 +28,10 @@ class SuperwhisperRepository(TranscriptionRepository):
         """
         Retrieve all transcriptions from Superwhisper directory.
 
+        This method optimizes loading by checking if the cache is up-to-date.
+        It compares the number of directories with the number of cache entries.
+        If they match, it loads from cache without scanning the directory.
+
         Expected structure:
         base_directory/
           ├── 1234567890/  (Unix timestamp)
@@ -40,10 +44,97 @@ class SuperwhisperRepository(TranscriptionRepository):
         Returns:
             List of transcription metadata
         """
+        if not self.base_directory.exists():
+            logger.warning(f"Base directory does not exist: {self.base_directory}")
+            return []
+
+        # Count directories and cache entries
+        dir_count = self._count_timestamp_directories()
+        cache_count = len(self._cache.get_all())
+
+        logger.info(f"Directory count: {dir_count}, Cache count: {cache_count}")
+
+        # If counts match, load from cache
+        if dir_count == cache_count and cache_count > 0:
+            logger.info("Cache is up-to-date, loading from cache")
+            return await self._load_from_cache()
+
+        # Counts differ, need to refresh cache by scanning directory
+        logger.warning(f"Cache out of sync (dirs: {dir_count}, cache: {cache_count}), refreshing cache")
+        return await self._load_from_directory_and_update_cache()
+
+    def _count_timestamp_directories(self) -> int:
+        """
+        Count the number of valid timestamp directories in base directory.
+
+        Returns:
+            Number of directories with timestamp names
+        """
+        count = 0
+        if not self.base_directory.exists():
+            return count
+
+        for subdir in self.base_directory.iterdir():
+            if not subdir.is_dir():
+                continue
+
+            # Try to parse directory name as timestamp
+            try:
+                int(subdir.name)
+                count += 1
+            except ValueError:
+                # Skip directories that aren't timestamps
+                continue
+
+        return count
+
+    async def _load_from_cache(self) -> list[TranscriptionMetadata]:
+        """
+        Load all transcriptions from cache without scanning the directory.
+
+        Returns:
+            List of transcription metadata loaded from cache
+        """
+        transcriptions: list[TranscriptionMetadata] = []
+        cache_entries = self._cache.get_all()
+
+        logger.debug(f"Loading {len(cache_entries)} transcriptions from cache")
+
+        for entry in cache_entries:
+            try:
+                timestamp = int(entry["internal_id"])
+                directory_path = Path(entry["directory_path"])
+
+                # Load transcription from the cached directory path
+                if directory_path.exists() and directory_path.is_dir():
+                    transcription = await self._load_transcription_from_directory(
+                        directory_path, timestamp
+                    )
+                    if transcription:
+                        transcriptions.append(transcription)
+                else:
+                    logger.warning(f"Cached directory not found: {directory_path}, will refresh cache")
+                    # Directory doesn't exist, cache is stale, fall back to full scan
+                    return await self._load_from_directory_and_update_cache()
+            except (ValueError, KeyError) as e:
+                logger.warning(f"Invalid cache entry: {e}, skipping")
+                continue
+
+        # Sort by timestamp (newest first)
+        transcriptions.sort(key=lambda x: x.timestamp, reverse=True)
+        logger.info(f"Loaded {len(transcriptions)} transcriptions from cache")
+        return transcriptions
+
+    async def _load_from_directory_and_update_cache(self) -> list[TranscriptionMetadata]:
+        """
+        Load all transcriptions by scanning the directory and update the cache.
+
+        Returns:
+            List of transcription metadata
+        """
         transcriptions: list[TranscriptionMetadata] = []
 
-        if not self.base_directory.exists():
-            return transcriptions
+        logger.debug("Scanning directory for transcriptions")
 
         # Iterate through subdirectories
         for subdir in self.base_directory.iterdir():
@@ -65,6 +156,7 @@ class SuperwhisperRepository(TranscriptionRepository):
 
         # Sort by timestamp (newest first)
         transcriptions.sort(key=lambda x: x.timestamp, reverse=True)
+        logger.info(f"Scanned and loaded {len(transcriptions)} transcriptions from directory")
         return transcriptions
 
     async def get_transcription_by_timestamp(
