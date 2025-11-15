@@ -257,13 +257,24 @@ function setupAudioPlayer() {
             return;
         }
 
+        // Check if audio is loaded enough to seek
+        if (state.audioElement.readyState < 2) {
+            console.warn('[Timeline] Cannot seek - audio not loaded enough (readyState:', state.audioElement.readyState, ')');
+            isSeeking = false;
+            return;
+        }
+
         const time = (parseFloat(e.target.value) / 100) * state.audioElement.duration;
-        console.log('[Timeline] Calculated seek time:', time, 'duration:', state.audioElement.duration, 'currentTime before:', state.audioElement.currentTime);
+        console.log('[Timeline] Calculated seek time:', time, 'duration:', state.audioElement.duration, 'currentTime before:', state.audioElement.currentTime, 'readyState:', state.audioElement.readyState);
 
         if (!isNaN(time) && isFinite(time) && state.audioElement.duration > 0) {
             console.log('[Timeline] Setting currentTime to:', time);
-            state.audioElement.currentTime = time;
-            console.log('[Timeline] currentTime after set:', state.audioElement.currentTime);
+            try {
+                state.audioElement.currentTime = time;
+                console.log('[Timeline] currentTime after set:', state.audioElement.currentTime);
+            } catch (e) {
+                console.error('[Timeline] Error setting currentTime:', e);
+            }
         } else {
             console.warn('[Timeline] Invalid time value:', { time, duration: state.audioElement.duration, isNaN: isNaN(time), isFinite: isFinite(time) });
         }
@@ -299,10 +310,22 @@ function setupAudioPlayer() {
 
     state.audioElement.addEventListener('loadedmetadata', () => {
         const duration = state.audioElement.duration;
-        console.log('[Audio Player] Metadata loaded - duration:', duration);
+        console.log('[Audio Player] Metadata loaded - duration:', duration, 'readyState:', state.audioElement.readyState);
         if (!isNaN(duration) && isFinite(duration)) {
             document.getElementById('totalTime').textContent = formatTime(duration);
         }
+    });
+
+    state.audioElement.addEventListener('loadeddata', () => {
+        console.log('[Audio Player] Data loaded - readyState:', state.audioElement.readyState, 'currentTime:', state.audioElement.currentTime);
+    });
+
+    state.audioElement.addEventListener('canplay', () => {
+        console.log('[Audio Player] Can play - readyState:', state.audioElement.readyState, 'currentTime:', state.audioElement.currentTime);
+    });
+
+    state.audioElement.addEventListener('canplaythrough', () => {
+        console.log('[Audio Player] Can play through - readyState:', state.audioElement.readyState);
     });
 
     state.audioElement.addEventListener('play', () => {
@@ -360,16 +383,26 @@ function skip(seconds) {
         return;
     }
 
+    // Check if audio is loaded enough to seek
+    // readyState: 0=nothing, 1=metadata, 2=current, 3=future, 4=enough
+    if (state.audioElement.readyState < 2) {
+        console.warn('[Audio Player] Cannot skip - audio not loaded enough (readyState:', state.audioElement.readyState, ')');
+        return;
+    }
+
     const oldTime = state.audioElement.currentTime;
     const newTime = state.audioElement.currentTime + seconds;
     const clampedTime = Math.max(0, Math.min(newTime, state.audioElement.duration));
 
-    console.log('[Audio Player] Skip:', seconds, 'seconds - from:', oldTime, 'to:', clampedTime);
+    console.log('[Audio Player] Skip:', seconds, 'seconds - from:', oldTime, 'to:', clampedTime, 'readyState:', state.audioElement.readyState);
 
-    // Clamp between 0 and duration
-    state.audioElement.currentTime = clampedTime;
-
-    console.log('[Audio Player] After skip, currentTime:', state.audioElement.currentTime);
+    try {
+        // Clamp between 0 and duration
+        state.audioElement.currentTime = clampedTime;
+        console.log('[Audio Player] After skip, currentTime:', state.audioElement.currentTime);
+    } catch (e) {
+        console.error('[Audio Player] Error during skip:', e);
+    }
 }
 
 // Jump to Timecode
@@ -379,10 +412,21 @@ function jumpToTimecode(time) {
         return;
     }
 
-    console.log('[Audio Player] Jump to timecode:', time);
-    state.audioElement.currentTime = time;
-    console.log('[Audio Player] After jump, currentTime:', state.audioElement.currentTime);
-    state.audioElement.play();
+    // Check if audio is loaded enough to seek
+    if (state.audioElement.readyState < 2) {
+        console.warn('[Audio Player] Cannot jump - audio not loaded enough (readyState:', state.audioElement.readyState, ')');
+        return;
+    }
+
+    console.log('[Audio Player] Jump to timecode:', time, 'readyState:', state.audioElement.readyState);
+
+    try {
+        state.audioElement.currentTime = time;
+        console.log('[Audio Player] After jump, currentTime:', state.audioElement.currentTime);
+        state.audioElement.play();
+    } catch (e) {
+        console.error('[Audio Player] Error during jump:', e);
+    }
 }
 
 // Update Time Display
