@@ -2,21 +2,35 @@
 
 import hashlib
 import json
+import logging
 from datetime import datetime
+from logly import logger
 from pathlib import Path
 
 import aiofiles
 
 from app.models.transcription import TranscriptionMetadata
 from app.repositories.base import TranscriptionRepository
+from app.repositories.superwhisper_cache import SuperWhisperCacheRepo
+
+logger = logging.getLogger(__name__)
 
 
 class SuperwhisperRepository(TranscriptionRepository):
     """Repository for Superwhisper transcription files."""
 
+    def __init__(self, base_directory: Path):
+        """Initialize repository with base directory and cache."""
+        super().__init__(base_directory)
+        self._cache = SuperWhisperCacheRepo()
+
     async def get_all_transcriptions(self) -> list[TranscriptionMetadata]:
         """
         Retrieve all transcriptions from Superwhisper directory.
+
+        This method optimizes loading by checking if the cache is up-to-date.
+        It compares the number of directories with the number of cache entries.
+        If they match, it loads from cache without scanning the directory.
 
         Expected structure:
         base_directory/
@@ -30,10 +44,97 @@ class SuperwhisperRepository(TranscriptionRepository):
         Returns:
             List of transcription metadata
         """
+        if not self.base_directory.exists():
+            logger.warning(f"Base directory does not exist: {self.base_directory}")
+            return []
+
+        # Count directories and cache entries
+        dir_count = self._count_timestamp_directories()
+        cache_count = len(self._cache.get_all())
+
+        logger.info(f"Directory count: {dir_count}, Cache count: {cache_count}")
+
+        # If counts match, load from cache
+        if dir_count == cache_count and cache_count > 0:
+            logger.info("Cache is up-to-date, loading from cache")
+            return await self._load_from_cache()
+
+        # Counts differ, need to refresh cache by scanning directory
+        logger.warning(f"Cache out of sync (dirs: {dir_count}, cache: {cache_count}), refreshing cache")
+        return await self._load_from_directory_and_update_cache()
+
+    def _count_timestamp_directories(self) -> int:
+        """
+        Count the number of valid timestamp directories in base directory.
+
+        Returns:
+            Number of directories with timestamp names
+        """
+        count = 0
+        if not self.base_directory.exists():
+            return count
+
+        for subdir in self.base_directory.iterdir():
+            if not subdir.is_dir():
+                continue
+
+            # Try to parse directory name as timestamp
+            try:
+                int(subdir.name)
+                count += 1
+            except ValueError:
+                # Skip directories that aren't timestamps
+                continue
+
+        return count
+
+    async def _load_from_cache(self) -> list[TranscriptionMetadata]:
+        """
+        Load all transcriptions from cache without scanning the directory.
+
+        Returns:
+            List of transcription metadata loaded from cache
+        """
+        transcriptions: list[TranscriptionMetadata] = []
+        cache_entries = self._cache.get_all()
+
+        logger.debug(f"Loading {len(cache_entries)} transcriptions from cache")
+
+        for entry in cache_entries:
+            try:
+                timestamp = int(entry["internal_id"])
+                directory_path = Path(entry["directory_path"])
+
+                # Load transcription from the cached directory path
+                if directory_path.exists() and directory_path.is_dir():
+                    transcription = await self._load_transcription_from_directory(
+                        directory_path, timestamp
+                    )
+                    if transcription:
+                        transcriptions.append(transcription)
+                else:
+                    logger.warning(f"Cached directory not found: {directory_path}, will refresh cache")
+                    # Directory doesn't exist, cache is stale, fall back to full scan
+                    return await self._load_from_directory_and_update_cache()
+            except (ValueError, KeyError) as e:
+                logger.warning(f"Invalid cache entry: {e}, skipping")
+                continue
+
+        # Sort by timestamp (newest first)
+        transcriptions.sort(key=lambda x: x.timestamp, reverse=True)
+        logger.info(f"Loaded {len(transcriptions)} transcriptions from cache")
+        return transcriptions
+
+    async def _load_from_directory_and_update_cache(self) -> list[TranscriptionMetadata]:
+        """
+        Load all transcriptions by scanning the directory and update the cache.
+
+        Returns:
+            List of transcription metadata
+        """
         transcriptions: list[TranscriptionMetadata] = []
 
-        if not self.base_directory.exists():
-            return transcriptions
+        logger.debug("Scanning directory for transcriptions")
 
         # Iterate through subdirectories
         for subdir in self.base_directory.iterdir():
@@ -55,6 +156,7 @@ class SuperwhisperRepository(TranscriptionRepository):
 
         # Sort by timestamp (newest first)
         transcriptions.sort(key=lambda x: x.timestamp, reverse=True)
+        logger.info(f"Scanned and loaded {len(transcriptions)} transcriptions from directory")
         return transcriptions
 
     async def get_transcription_by_timestamp(
@@ -74,6 +176,45 @@ class SuperwhisperRepository(TranscriptionRepository):
             return None
 
         return await self._load_transcription_from_directory(subdir, timestamp)
+
+    async def get_transcription_by_recording_id(
+        self, recording_id: str
+    ) -> TranscriptionMetadata | None:
+        """
+        Retrieve a specific transcription by SuperWhisper recording ID.
+
+        This method uses the cache for faster lookups. If not found in cache,
+        it will scan the directory and populate the cache.
+
+        Args:
+            recording_id: SuperWhisper recording ID
+
+        Returns:
+            Transcription metadata or None if not found
+        """
+        # Try cache first
+        cache_entry = self._cache.get_by_recording_id(recording_id)
+        logger.info(f"Recording cache state {recording_id}: {bool(cache_entry)}")
+        if cache_entry:
+            logger.debug(f"Cache hit for recording_id={recording_id}, internal_id={cache_entry['internal_id']}")
+            # Load from cached directory path
+            timestamp = int(cache_entry["internal_id"])
+            return await self.get_transcription_by_timestamp(timestamp)
+
+        # If not in cache, scan all transcriptions to populate cache
+        # This will also populate the cache with this recording if it exists
+        logger.warning(f"Cache miss for recording_id={recording_id}, scanning all transcriptions to populate cache")
+        await self.get_all_transcriptions()
+
+        # Try cache again
+        cache_entry = self._cache.get_by_recording_id(recording_id)
+        if cache_entry:
+            logger.debug(f"Found recording_id={recording_id} after cache population")
+            timestamp = int(cache_entry["internal_id"])
+            return await self.get_transcription_by_timestamp(timestamp)
+
+        logger.warning(f"Recording not found: recording_id={recording_id}")
+        return None
 
     async def read_audio_file(self, transcription: TranscriptionMetadata) -> bytes:
         """
@@ -152,12 +293,19 @@ class SuperwhisperRepository(TranscriptionRepository):
         mode_name = None
         processing_time = None
 
+        recording_id = None
         if metadata_content:
             # SuperWhisper fields
+            recording_id = metadata_content.get("recordingId") or metadata_content.get("id")
             raw_transcription = metadata_content.get("rawResult")
             preprocessed_transcription = metadata_content.get("result")
             llm_transcription = metadata_content.get("llmResult")
-            segments = metadata_content.get("segments")
+            raw_segments = metadata_content.get("segments")
+
+            # Normalize segment field names
+            # SuperWhisper uses 'start'/'end' but we expect 'start_time'/'end_time'
+            segments = self._normalize_segments(raw_segments) if raw_segments else None
+
             duration = metadata_content.get("duration")
             language = metadata_content.get("languageSelected")
             model_name = metadata_content.get("modelName")
@@ -187,11 +335,24 @@ class SuperwhisperRepository(TranscriptionRepository):
         # Prefer preprocessed > raw > llm
         transcription_text = preprocessed_transcription or raw_transcription or llm_transcription
 
+        # ALWAYS cache the mapping - use timestamp as fallback if no recording_id
+        # This ensures the cache is populated for all transcriptions
+        cache_recording_id = recording_id if recording_id else str(timestamp)
+        logger.debug(f"Caching transcription: recording_id={cache_recording_id}, timestamp={timestamp}, audio_hash={audio_hash}")
+
+        self._cache.upsert(
+            recording_id=cache_recording_id,
+            internal_id=str(timestamp),
+            directory_path=str(directory),
+            audio_hash=audio_hash,
+        )
+
         return TranscriptionMetadata(
             timestamp=timestamp,
             directory=directory,
             audio_file=audio_file if audio_file and audio_file.exists() else None,
             metadata_file=metadata_file if metadata_file.exists() else None,
+            recording_id=recording_id,
             raw_transcription=raw_transcription,
             preprocessed_transcription=preprocessed_transcription,
             llm_transcription=llm_transcription,
@@ -232,3 +393,30 @@ class SuperwhisperRepository(TranscriptionRepository):
         except OSError:
             # If we can't read the file, return empty hash
             return ""
+
+    def _normalize_segments(self, segments: list[dict]) -> list[dict]:
+        """
+        Normalize segment field names to match our expected format.
+
+        SuperWhisper segments use 'start'/'end' but we expect 'start_time'/'end_time'.
+        This method transforms the segments to use consistent field names.
+
+        Args:
+            segments: Raw segments from SuperWhisper
+
+        Returns:
+            Normalized segments with start_time, end_time, and text fields
+        """
+        if not segments:
+            return []
+
+        normalized = []
+        for segment in segments:
+            normalized_segment = {
+                "start_time": segment.get("start", 0),
+                "end_time": segment.get("end", 0),
+                "text": segment.get("text", ""),
+            }
+            normalized.append(normalized_segment)
+
+        return normalized

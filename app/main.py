@@ -1,5 +1,7 @@
 """Main FastAPI application."""
 
+from logly import logger
+
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -9,12 +11,29 @@ from fastapi.staticfiles import StaticFiles
 
 from app.api.routes import conversations, health
 from app.core.config import settings
+from app.db import init_db
+
+
+logger.configure(
+    level="INFO",
+    color=False,
+    show_function=False,
+    show_module=False,
+    show_filename=False,
+    show_lineno=False,
+)
 
 app = FastAPI(
     title=settings.app_name,
     version=settings.app_version,
     debug=settings.debug,
 )
+
+
+@app.on_event("startup")
+async def startup_event():
+    """Initialize database on application startup."""
+    init_db()
 
 # Add CORS middleware
 app.add_middleware(

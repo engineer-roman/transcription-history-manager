@@ -12,14 +12,16 @@
         <div class="container">
             <h1>Transcription History</h1>
             <div class="search-container">
-                <input
-                    type="text"
-                    id="searchInput"
-                    placeholder="Search transcriptions..."
-                    class="search-input"
-                >
+                <div class="search-input-wrapper">
+                    <input
+                        type="text"
+                        id="searchInput"
+                        placeholder="Search transcriptions..."
+                        class="search-input"
+                    >
+                    <button id="resetSearchBtn" class="btn-reset-search" title="Reset search">×</button>
+                </div>
                 <button id="searchBtn" class="btn btn-primary">Search</button>
-                <button id="clearSearchBtn" class="btn btn-secondary" style="display: none;">Clear</button>
             </div>
         </div>
     </header>
@@ -58,8 +60,12 @@
             <audio id="audioElement" preload="metadata"></audio>
             <div class="player-controls">
                 <button id="playPauseBtn" class="btn btn-icon">▶</button>
-                <button id="backwardBtn" class="btn btn-icon" title="Back 10s">⏪</button>
-                <button id="forwardBtn" class="btn btn-icon" title="Forward 10s">⏩</button>
+                <button id="backwardBtn" class="btn btn-icon btn-seek" title="Back 10s">
+                    <span class="seek-icon">↶<sub>10</sub></span>
+                </button>
+                <button id="forwardBtn" class="btn btn-icon btn-seek" title="Forward 10s">
+                    <span class="seek-icon">↷<sub>10</sub></span>
+                </button>
                 <div class="time-display">
                     <span id="currentTime">0:00</span> / <span id="totalTime">0:00</span>
                 </div>

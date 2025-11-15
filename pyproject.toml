@@ -10,6 +10,7 @@ dependencies = [
     "pydantic-settings>=2.6.0",
     "aiofiles>=24.1.0",
     "python-multipart>=0.0.9",
+    "logly>=0.1.6",
 ]
 
 [project.optional-dependencies]

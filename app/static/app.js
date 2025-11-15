@@ -25,16 +25,25 @@ async function initializeApp() {
 // Setup Event Listeners
 function setupEventListeners() {
     const searchBtn = document.getElementById('searchBtn');
-    const clearSearchBtn = document.getElementById('clearSearchBtn');
+    const resetSearchBtn = document.getElementById('resetSearchBtn');
     const searchInput = document.getElementById('searchInput');
 
     searchBtn.addEventListener('click', handleSearch);
-    clearSearchBtn.addEventListener('click', clearSearch);
+    resetSearchBtn.addEventListener('click', clearSearch);
 
     // Search on Enter key
     searchInput.addEventListener('keypress', (e) => {
         if (e.key === 'Enter') {
             handleSearch();
+        }
+    });
+
+    // Show/hide reset button based on input
+    searchInput.addEventListener('input', (e) => {
+        if (e.target.value.trim()) {
+            resetSearchBtn.classList.add('visible');
+        } else {
+            resetSearchBtn.classList.remove('visible');
         }
     });
 }
@@ -110,10 +119,15 @@ function renderConversationDetails() {
 
     // Populate version dropdown
     const versionDropdown = clone.querySelector('#versionDropdown');
-    state.currentConversation.versions.forEach(version => {
+    const totalVersions = state.currentConversation.versions.length;
+    state.currentConversation.versions.forEach((version, index) => {
         const option = document.createElement('option');
         option.value = version.version_id;
-        option.textContent = `${formatDate(version.transcription.created_at)}${version.is_latest ? ' (Latest)' : ''}`;
+        const versionNumber = totalVersions - index;
+        const dateStr = formatDate(version.transcription.created_at);
+        option.textContent = version.is_latest
+            ? `Latest (v${versionNumber} - ${dateStr})`
+            : `v${versionNumber} - ${dateStr}`;
         if (version.version_id === state.currentVersion.version_id) {
             option.selected = true;
         }
@@ -183,18 +197,98 @@ function setupAudioPlayer() {
     const timelineSlider = document.getElementById('timelineSlider');
     const speedBtns = document.querySelectorAll('.speed-btn');
 
+    console.log('[Audio Player] Setting up audio player');
+
     // Play/Pause
     playPauseBtn.addEventListener('click', togglePlayPause);
 
     // Backward/Forward
-    backwardBtn.addEventListener('click', () => skip(-10));
-    forwardBtn.addEventListener('click', () => skip(10));
-
-    // Timeline
-    timelineSlider.addEventListener('input', (e) => {
-        const time = (e.target.value / 100) * state.audioElement.duration;
-        state.audioElement.currentTime = time;
+    backwardBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        console.log('[Audio Player] Backward button clicked');
+        skip(-10);
     });
+    forwardBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        console.log('[Audio Player] Forward button clicked');
+        skip(10);
+    });
+
+    // Timeline slider handling
+    let isSeeking = false;
+    let wasPlaying = false;
+
+    // When user starts interacting with slider
+    timelineSlider.addEventListener('mousedown', () => {
+        isSeeking = true;
+        wasPlaying = !state.audioElement.paused;
+        console.log('[Timeline] Mouse down - isSeeking:', isSeeking, 'wasPlaying:', wasPlaying, 'currentTime:', state.audioElement.currentTime);
+        if (wasPlaying) {
+            state.audioElement.pause();
+        }
+    });
+
+    // Handle touch events for mobile
+    timelineSlider.addEventListener('touchstart', () => {
+        isSeeking = true;
+        wasPlaying = !state.audioElement.paused;
+        console.log('[Timeline] Touch start - isSeeking:', isSeeking, 'wasPlaying:', wasPlaying);
+        if (wasPlaying) {
+            state.audioElement.pause();
+        }
+    });
+
+    // While dragging, just update the time display
+    timelineSlider.addEventListener('input', (e) => {
+        if (isSeeking) {
+            const time = (parseFloat(e.target.value) / 100) * state.audioElement.duration;
+            console.log('[Timeline] Input - slider value:', e.target.value, 'calculated time:', time, 'duration:', state.audioElement.duration);
+            if (!isNaN(time) && isFinite(time)) {
+                document.getElementById('currentTime').textContent = formatTime(time);
+            }
+        }
+    });
+
+    // When user releases the slider
+    const handleSeekEnd = (e) => {
+        console.log('[Timeline] Seek end - isSeeking:', isSeeking, 'slider value:', e.target.value);
+        if (!isSeeking) {
+            console.log('[Timeline] Not seeking, ignoring');
+            return;
+        }
+
+        // Check if audio is loaded enough to seek
+        if (state.audioElement.readyState < 2) {
+            console.warn('[Timeline] Cannot seek - audio not loaded enough (readyState:', state.audioElement.readyState, ')');
+            isSeeking = false;
+            return;
+        }
+
+        const time = (parseFloat(e.target.value) / 100) * state.audioElement.duration;
+        console.log('[Timeline] Calculated seek time:', time, 'duration:', state.audioElement.duration, 'currentTime before:', state.audioElement.currentTime, 'readyState:', state.audioElement.readyState);
+
+        if (!isNaN(time) && isFinite(time) && state.audioElement.duration > 0) {
+            console.log('[Timeline] Setting currentTime to:', time);
+            try {
+                state.audioElement.currentTime = time;
+                console.log('[Timeline] currentTime after set:', state.audioElement.currentTime);
+            } catch (e) {
+                console.error('[Timeline] Error setting currentTime:', e);
+            }
+        } else {
+            console.warn('[Timeline] Invalid time value:', { time, duration: state.audioElement.duration, isNaN: isNaN(time), isFinite: isFinite(time) });
+        }
+
+        isSeeking = false;
+
+        if (wasPlaying) {
+            console.log('[Timeline] Resuming playback');
+            state.audioElement.play();
+        }
+    };
+
+    timelineSlider.addEventListener('mouseup', handleSeekEnd);
+    timelineSlider.addEventListener('touchend', handleSeekEnd);
 
     // Speed controls
     speedBtns.forEach(btn => {
@@ -208,24 +302,90 @@ function setupAudioPlayer() {
     });
 
     // Audio events
-    state.audioElement.addEventListener('timeupdate', updateTimeDisplay);
-    state.audioElement.addEventListener('loadedmetadata', () => {
-        document.getElementById('totalTime').textContent = formatTime(state.audioElement.duration);
+    state.audioElement.addEventListener('timeupdate', () => {
+        if (!isSeeking) {
+            updateTimeDisplay();
+        }
     });
+
+    state.audioElement.addEventListener('loadedmetadata', () => {
+        const duration = state.audioElement.duration;
+        console.log('[Audio Player] Metadata loaded - duration:', duration, 'readyState:', state.audioElement.readyState);
+        if (!isNaN(duration) && isFinite(duration)) {
+            document.getElementById('totalTime').textContent = formatTime(duration);
+        }
+    });
+
+    state.audioElement.addEventListener('loadeddata', () => {
+        console.log('[Audio Player] Data loaded - readyState:', state.audioElement.readyState, 'currentTime:', state.audioElement.currentTime);
+    });
+
+    state.audioElement.addEventListener('canplay', () => {
+        console.log('[Audio Player] Can play - readyState:', state.audioElement.readyState, 'currentTime:', state.audioElement.currentTime);
+    });
+
+    state.audioElement.addEventListener('canplaythrough', () => {
+        console.log('[Audio Player] Can play through - readyState:', state.audioElement.readyState);
+    });
+
     state.audioElement.addEventListener('play', () => {
+        console.log('[Audio Player] Playing - currentTime:', state.audioElement.currentTime);
         playPauseBtn.textContent = '⏸';
     });
+
     state.audioElement.addEventListener('pause', () => {
+        console.log('[Audio Player] Paused - currentTime:', state.audioElement.currentTime);
         playPauseBtn.textContent = '▶';
+    });
+
+    state.audioElement.addEventListener('seeked', () => {
+        console.log('[Audio Player] Seeked event - currentTime:', state.audioElement.currentTime);
+    });
+
+    state.audioElement.addEventListener('seeking', () => {
+        console.log('[Audio Player] Seeking event - currentTime:', state.audioElement.currentTime);
+    });
+
+    state.audioElement.addEventListener('loadstart', () => {
+        console.log('[Audio Player] Load start event - currentTime:', state.audioElement.currentTime);
+        console.log('[Audio Player] Load start stack trace:', new Error().stack);
+    });
+
+    state.audioElement.addEventListener('emptied', () => {
+        console.log('[Audio Player] Emptied event - audio was reset');
+        console.log('[Audio Player] Emptied stack trace:', new Error().stack);
     });
 }
 
 // Update Audio Source
 function updateAudioSource() {
-    if (!state.currentConversation || !state.currentVersion) return;
+    if (!state.currentConversation || !state.currentVersion) {
+        console.log('[Audio Player] updateAudioSource called but no conversation/version loaded');
+        return;
+    }
 
     const audioUrl = `${API_BASE}/conversations/${state.currentConversation.conversation_id}/audio/${state.currentVersion.version_id}`;
-    state.audioElement.src = audioUrl;
+    const currentSrc = state.audioElement.src;
+    const currentTime = state.audioElement.currentTime;
+
+    console.log('[Audio Player] updateAudioSource called');
+    console.log('[Audio Player] Current src:', currentSrc);
+    console.log('[Audio Player] Current time:', currentTime);
+    console.log('[Audio Player] New URL:', audioUrl);
+    console.log('[Audio Player] Stack trace:', new Error().stack);
+
+    // Compare URLs properly - src returns absolute URL, so check if it ends with our relative URL
+    const shouldUpdate = !currentSrc || !currentSrc.endsWith(audioUrl);
+
+    console.log('[Audio Player] Should update?', shouldUpdate);
+
+    if (shouldUpdate) {
+        console.log('[Audio Player] Source changed, loading new audio (this will reset currentTime)');
+        state.audioElement.src = audioUrl;
+        state.audioElement.load();
+    } else {
+        console.log('[Audio Player] Source unchanged, skipping reload (currentTime preserved)');
+    }
 }
 
 // Toggle Play/Pause
@@ -239,25 +399,101 @@ function togglePlayPause() {
 
 // Skip Forward/Backward
 function skip(seconds) {
-    state.audioElement.currentTime += seconds;
+    if (!state.audioElement || isNaN(state.audioElement.duration)) {
+        console.warn('[Audio Player] Cannot skip - audio not ready');
+        return;
+    }
+
+    // Check if audio is loaded enough to seek
+    // readyState: 0=nothing, 1=metadata, 2=current, 3=future, 4=enough
+    if (state.audioElement.readyState < 2) {
+        console.warn('[Audio Player] Cannot skip - audio not loaded enough (readyState:', state.audioElement.readyState, ')');
+        return;
+    }
+
+    const oldTime = state.audioElement.currentTime;
+    const newTime = state.audioElement.currentTime + seconds;
+    const clampedTime = Math.max(0, Math.min(newTime, state.audioElement.duration));
+
+    console.log('[Audio Player] Skip:', seconds, 'seconds - from:', oldTime, 'to:', clampedTime, 'readyState:', state.audioElement.readyState);
+    console.log('[Audio Player] Audio element details:', {
+        src: state.audioElement.src,
+        duration: state.audioElement.duration,
+        networkState: state.audioElement.networkState,
+        readyState: state.audioElement.readyState,
+        paused: state.audioElement.paused,
+        error: state.audioElement.error
+    });
+
+    // Log seekable ranges for debugging (but don't block on them)
+    if (state.audioElement.seekable && state.audioElement.seekable.length > 0) {
+        for (let i = 0; i < state.audioElement.seekable.length; i++) {
+            const start = state.audioElement.seekable.start(i);
+            const end = state.audioElement.seekable.end(i);
+            console.log('[Audio Player] Seekable range', i, ':', start, 'to', end);
+        }
+    } else {
+        console.log('[Audio Player] No seekable ranges available yet');
+    }
+
+    console.log('[Audio Player] BEFORE setting currentTime:', state.audioElement.currentTime);
+    console.log('[Audio Player] ATTEMPTING to set currentTime to:', clampedTime);
+
+    try {
+        // Set currentTime and let the browser handle the seek
+        state.audioElement.currentTime = clampedTime;
+        console.log('[Audio Player] IMMEDIATELY AFTER set, currentTime:', state.audioElement.currentTime);
+
+        // Check again after a tick
+        setTimeout(() => {
+            console.log('[Audio Player] After setTimeout, currentTime:', state.audioElement.currentTime);
+        }, 0);
+    } catch (e) {
+        console.error('[Audio Player] Error during skip:', e);
+    }
 }
 
 // Jump to Timecode
 function jumpToTimecode(time) {
-    state.audioElement.currentTime = time;
-    state.audioElement.play();
+    if (!state.audioElement || isNaN(state.audioElement.duration)) {
+        console.warn('[Audio Player] Cannot jump to timecode - audio not ready');
+        return;
+    }
+
+    // Check if audio is loaded enough to seek
+    if (state.audioElement.readyState < 2) {
+        console.warn('[Audio Player] Cannot jump - audio not loaded enough (readyState:', state.audioElement.readyState, ')');
+        return;
+    }
+
+    console.log('[Audio Player] Jump to timecode:', time, 'readyState:', state.audioElement.readyState);
+
+    try {
+        state.audioElement.currentTime = time;
+        console.log('[Audio Player] After jump, currentTime:', state.audioElement.currentTime);
+        state.audioElement.play();
+    } catch (e) {
+        console.error('[Audio Player] Error during jump:', e);
+    }
 }
 
 // Update Time Display
 function updateTimeDisplay() {
+    if (!state.audioElement) return;
+
     const currentTime = state.audioElement.currentTime;
     const duration = state.audioElement.duration;
+
+    if (isNaN(currentTime) || isNaN(duration)) return;
 
     document.getElementById('currentTime').textContent = formatTime(currentTime);
 
     const timelineSlider = document.getElementById('timelineSlider');
-    if (!isNaN(duration)) {
-        timelineSlider.value = (currentTime / duration) * 100;
+    if (timelineSlider && duration > 0) {
+        const percentage = (currentTime / duration) * 100;
+        if (isFinite(percentage)) {
+            timelineSlider.value = percentage;
+        }
     }
 }
 
@@ -299,9 +535,6 @@ async function handleSearch() {
 
         state.searchResults = await response.json();
         renderSearchResults();
-
-        // Show clear button
-        document.getElementById('clearSearchBtn').style.display = 'inline-block';
     } catch (error) {
         console.error('Error searching:', error);
         showError('Search failed. Please try again.');
@@ -339,10 +572,13 @@ function clearSearch() {
     state.isSearching = false;
     state.searchResults = [];
 
-    document.getElementById('searchInput').value = '';
-    document.getElementById('clearSearchBtn').style.display = 'none';
+    const searchInput = document.getElementById('searchInput');
+    const resetSearchBtn = document.getElementById('resetSearchBtn');
 
-    renderConversationsList(state.conversations);
+    searchInput.value = '';
+    resetSearchBtn.classList.remove('visible');
+
+    loadConversations();
 }
 
 // Highlight Active Conversation
