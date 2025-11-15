@@ -345,28 +345,46 @@ function setupAudioPlayer() {
     state.audioElement.addEventListener('seeking', () => {
         console.log('[Audio Player] Seeking event - currentTime:', state.audioElement.currentTime);
     });
+
+    state.audioElement.addEventListener('loadstart', () => {
+        console.log('[Audio Player] Load start event - currentTime:', state.audioElement.currentTime);
+        console.log('[Audio Player] Load start stack trace:', new Error().stack);
+    });
+
+    state.audioElement.addEventListener('emptied', () => {
+        console.log('[Audio Player] Emptied event - audio was reset');
+        console.log('[Audio Player] Emptied stack trace:', new Error().stack);
+    });
 }
 
 // Update Audio Source
 function updateAudioSource() {
-    if (!state.currentConversation || !state.currentVersion) return;
+    if (!state.currentConversation || !state.currentVersion) {
+        console.log('[Audio Player] updateAudioSource called but no conversation/version loaded');
+        return;
+    }
 
     const audioUrl = `${API_BASE}/conversations/${state.currentConversation.conversation_id}/audio/${state.currentVersion.version_id}`;
+    const currentSrc = state.audioElement.src;
+    const currentTime = state.audioElement.currentTime;
 
-    console.log('[Audio Player] Updating audio source');
-    console.log('[Audio Player] Current src:', state.audioElement.src);
+    console.log('[Audio Player] updateAudioSource called');
+    console.log('[Audio Player] Current src:', currentSrc);
+    console.log('[Audio Player] Current time:', currentTime);
     console.log('[Audio Player] New URL:', audioUrl);
+    console.log('[Audio Player] Stack trace:', new Error().stack);
 
     // Compare URLs properly - src returns absolute URL, so check if it ends with our relative URL
-    const currentSrc = state.audioElement.src;
     const shouldUpdate = !currentSrc || !currentSrc.endsWith(audioUrl);
 
+    console.log('[Audio Player] Should update?', shouldUpdate);
+
     if (shouldUpdate) {
-        console.log('[Audio Player] Source changed, loading new audio');
+        console.log('[Audio Player] Source changed, loading new audio (this will reset currentTime)');
         state.audioElement.src = audioUrl;
         state.audioElement.load();
     } else {
-        console.log('[Audio Player] Source unchanged, skipping reload');
+        console.log('[Audio Player] Source unchanged, skipping reload (currentTime preserved)');
     }
 }
 
@@ -399,26 +417,19 @@ function skip(seconds) {
 
     console.log('[Audio Player] Skip:', seconds, 'seconds - from:', oldTime, 'to:', clampedTime, 'readyState:', state.audioElement.readyState);
 
-    // Check if the target time is within seekable ranges
+    // Log seekable ranges for debugging (but don't block on them)
     if (state.audioElement.seekable && state.audioElement.seekable.length > 0) {
-        let isSeekable = false;
         for (let i = 0; i < state.audioElement.seekable.length; i++) {
             const start = state.audioElement.seekable.start(i);
             const end = state.audioElement.seekable.end(i);
             console.log('[Audio Player] Seekable range', i, ':', start, 'to', end);
-            if (clampedTime >= start && clampedTime <= end) {
-                isSeekable = true;
-                break;
-            }
         }
-        if (!isSeekable) {
-            console.warn('[Audio Player] Target time', clampedTime, 'not in seekable ranges');
-            return;
-        }
+    } else {
+        console.log('[Audio Player] No seekable ranges available yet');
     }
 
     try {
-        // Clamp between 0 and duration
+        // Set currentTime and let the browser handle the seek
         state.audioElement.currentTime = clampedTime;
         console.log('[Audio Player] After skip, currentTime:', state.audioElement.currentTime);
     } catch (e) {
