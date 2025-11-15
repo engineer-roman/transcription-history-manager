@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import logging
 from datetime import datetime
 from logly import logger
 from pathlib import Path
@@ -11,6 +12,8 @@ import aiofiles
 from app.models.transcription import TranscriptionMetadata
 from app.repositories.base import TranscriptionRepository
 from app.repositories.superwhisper_cache import SuperWhisperCacheRepo
+
+logger = logging.getLogger(__name__)
 
 
 class SuperwhisperRepository(TranscriptionRepository):
@@ -101,20 +104,24 @@ class SuperwhisperRepository(TranscriptionRepository):
         cache_entry = self._cache.get_by_recording_id(recording_id)
         logger.info(f"Recording cache state {recording_id}: {bool(cache_entry)}")
         if cache_entry:
+            logger.debug(f"Cache hit for recording_id={recording_id}, internal_id={cache_entry['internal_id']}")
             # Load from cached directory path
             timestamp = int(cache_entry["internal_id"])
             return await self.get_transcription_by_timestamp(timestamp)
 
         # If not in cache, scan all transcriptions to populate cache
         # This will also populate the cache with this recording if it exists
+        logger.warning(f"Cache miss for recording_id={recording_id}, scanning all transcriptions to populate cache")
         await self.get_all_transcriptions()
 
         # Try cache again
         cache_entry = self._cache.get_by_recording_id(recording_id)
         if cache_entry:
+            logger.debug(f"Found recording_id={recording_id} after cache population")
             timestamp = int(cache_entry["internal_id"])
             return await self.get_transcription_by_timestamp(timestamp)
 
+        logger.warning(f"Recording not found: recording_id={recording_id}")
         return None
 
     async def read_audio_file(self, transcription: TranscriptionMetadata) -> bytes:

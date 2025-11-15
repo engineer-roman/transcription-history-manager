@@ -197,16 +197,20 @@ function setupAudioPlayer() {
     const timelineSlider = document.getElementById('timelineSlider');
     const speedBtns = document.querySelectorAll('.speed-btn');
 
+    console.log('[Audio Player] Setting up audio player');
+
     // Play/Pause
     playPauseBtn.addEventListener('click', togglePlayPause);
 
     // Backward/Forward
     backwardBtn.addEventListener('click', (e) => {
         e.preventDefault();
+        console.log('[Audio Player] Backward button clicked');
         skip(-10);
     });
     forwardBtn.addEventListener('click', (e) => {
         e.preventDefault();
+        console.log('[Audio Player] Forward button clicked');
         skip(10);
     });
 
@@ -218,6 +222,7 @@ function setupAudioPlayer() {
     timelineSlider.addEventListener('mousedown', () => {
         isSeeking = true;
         wasPlaying = !state.audioElement.paused;
+        console.log('[Timeline] Mouse down - isSeeking:', isSeeking, 'wasPlaying:', wasPlaying, 'currentTime:', state.audioElement.currentTime);
         if (wasPlaying) {
             state.audioElement.pause();
         }
@@ -227,6 +232,7 @@ function setupAudioPlayer() {
     timelineSlider.addEventListener('touchstart', () => {
         isSeeking = true;
         wasPlaying = !state.audioElement.paused;
+        console.log('[Timeline] Touch start - isSeeking:', isSeeking, 'wasPlaying:', wasPlaying);
         if (wasPlaying) {
             state.audioElement.pause();
         }
@@ -236,6 +242,7 @@ function setupAudioPlayer() {
     timelineSlider.addEventListener('input', (e) => {
         if (isSeeking) {
             const time = (parseFloat(e.target.value) / 100) * state.audioElement.duration;
+            console.log('[Timeline] Input - slider value:', e.target.value, 'calculated time:', time, 'duration:', state.audioElement.duration);
             if (!isNaN(time) && isFinite(time)) {
                 document.getElementById('currentTime').textContent = formatTime(time);
             }
@@ -244,16 +251,27 @@ function setupAudioPlayer() {
 
     // When user releases the slider
     const handleSeekEnd = (e) => {
-        if (!isSeeking) return;
+        console.log('[Timeline] Seek end - isSeeking:', isSeeking, 'slider value:', e.target.value);
+        if (!isSeeking) {
+            console.log('[Timeline] Not seeking, ignoring');
+            return;
+        }
 
         const time = (parseFloat(e.target.value) / 100) * state.audioElement.duration;
+        console.log('[Timeline] Calculated seek time:', time, 'duration:', state.audioElement.duration, 'currentTime before:', state.audioElement.currentTime);
+
         if (!isNaN(time) && isFinite(time) && state.audioElement.duration > 0) {
+            console.log('[Timeline] Setting currentTime to:', time);
             state.audioElement.currentTime = time;
+            console.log('[Timeline] currentTime after set:', state.audioElement.currentTime);
+        } else {
+            console.warn('[Timeline] Invalid time value:', { time, duration: state.audioElement.duration, isNaN: isNaN(time), isFinite: isFinite(time) });
         }
 
         isSeeking = false;
 
         if (wasPlaying) {
+            console.log('[Timeline] Resuming playback');
             state.audioElement.play();
         }
     };
@@ -281,17 +299,28 @@ function setupAudioPlayer() {
 
     state.audioElement.addEventListener('loadedmetadata', () => {
         const duration = state.audioElement.duration;
+        console.log('[Audio Player] Metadata loaded - duration:', duration);
         if (!isNaN(duration) && isFinite(duration)) {
             document.getElementById('totalTime').textContent = formatTime(duration);
         }
     });
 
     state.audioElement.addEventListener('play', () => {
+        console.log('[Audio Player] Playing - currentTime:', state.audioElement.currentTime);
         playPauseBtn.textContent = '⏸';
     });
 
     state.audioElement.addEventListener('pause', () => {
+        console.log('[Audio Player] Paused - currentTime:', state.audioElement.currentTime);
         playPauseBtn.textContent = '▶';
+    });
+
+    state.audioElement.addEventListener('seeked', () => {
+        console.log('[Audio Player] Seeked event - currentTime:', state.audioElement.currentTime);
+    });
+
+    state.audioElement.addEventListener('seeking', () => {
+        console.log('[Audio Player] Seeking event - currentTime:', state.audioElement.currentTime);
     });
 }
 
@@ -301,10 +330,17 @@ function updateAudioSource() {
 
     const audioUrl = `${API_BASE}/conversations/${state.currentConversation.conversation_id}/audio/${state.currentVersion.version_id}`;
 
+    console.log('[Audio Player] Updating audio source');
+    console.log('[Audio Player] Current src:', state.audioElement.src);
+    console.log('[Audio Player] New URL:', audioUrl);
+
     // Only update if the source actually changed
     if (state.audioElement.src !== audioUrl) {
+        console.log('[Audio Player] Source changed, loading new audio');
         state.audioElement.src = audioUrl;
         state.audioElement.load();
+    } else {
+        console.log('[Audio Player] Source unchanged, skipping reload');
     }
 }
 
@@ -320,21 +356,32 @@ function togglePlayPause() {
 // Skip Forward/Backward
 function skip(seconds) {
     if (!state.audioElement || isNaN(state.audioElement.duration)) {
+        console.warn('[Audio Player] Cannot skip - audio not ready');
         return;
     }
 
+    const oldTime = state.audioElement.currentTime;
     const newTime = state.audioElement.currentTime + seconds;
+    const clampedTime = Math.max(0, Math.min(newTime, state.audioElement.duration));
+
+    console.log('[Audio Player] Skip:', seconds, 'seconds - from:', oldTime, 'to:', clampedTime);
+
     // Clamp between 0 and duration
-    state.audioElement.currentTime = Math.max(0, Math.min(newTime, state.audioElement.duration));
+    state.audioElement.currentTime = clampedTime;
+
+    console.log('[Audio Player] After skip, currentTime:', state.audioElement.currentTime);
 }
 
 // Jump to Timecode
 function jumpToTimecode(time) {
     if (!state.audioElement || isNaN(state.audioElement.duration)) {
+        console.warn('[Audio Player] Cannot jump to timecode - audio not ready');
         return;
     }
 
+    console.log('[Audio Player] Jump to timecode:', time);
     state.audioElement.currentTime = time;
+    console.log('[Audio Player] After jump, currentTime:', state.audioElement.currentTime);
     state.audioElement.play();
 }
 

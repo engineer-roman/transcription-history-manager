@@ -1,9 +1,13 @@
 """Service layer for transcription business logic."""
 
+import hashlib
+import logging
 from datetime import datetime
 
 from app.models.transcription import AudioVersion, Conversation, TranscriptionMetadata
 from app.repositories.base import TranscriptionRepository
+
+logger = logging.getLogger(__name__)
 
 
 class TranscriptionService:
@@ -36,15 +40,72 @@ class TranscriptionService:
         """
         Get a specific conversation by ID.
 
+        This method tries to use the cache when possible. It attempts to
+        find all transcriptions with the same audio_hash (conversation_id)
+        and build a complete conversation object with all versions.
+
         Args:
-            conversation_id: Conversation identifier
+            conversation_id: Conversation identifier (typically audio hash or timestamp)
 
         Returns:
             Conversation or None if not found
         """
-        convo = await self.repository.get_transcription_by_recording_id(conversation_id)
+        logger.debug(f"Getting conversation by ID: {conversation_id}")
 
+        # Try to get from cache first if repository supports it
+        if hasattr(self.repository, '_cache'):
+            # Get all cache entries with this audio_hash
+            all_cache_entries = self.repository._cache.get_all()
+            matching_entries = [
+                entry for entry in all_cache_entries
+                if entry.get("audio_hash") == conversation_id
+            ]
 
+            if matching_entries:
+                logger.debug(f"Found {len(matching_entries)} transcriptions for conversation {conversation_id} in cache")
+
+                # Load all transcriptions for this conversation
+                transcriptions = []
+                for entry in matching_entries:
+                    timestamp = int(entry["internal_id"])
+                    transcription = await self.repository.get_transcription_by_timestamp(timestamp)
+                    if transcription:
+                        transcriptions.append(transcription)
+
+                if transcriptions:
+                    # Build complete conversation from all versions
+                    conversations = self._group_transcriptions_into_conversations(transcriptions)
+                    if conversations:
+                        logger.debug(f"Built conversation {conversation_id} from cache with {len(transcriptions)} version(s)")
+                        return conversations[0]
+
+            # Also check if conversation_id is a recording_id (single timestamp)
+            cache_entry = self.repository._cache.get_by_recording_id(conversation_id)
+            if cache_entry:
+                logger.debug(f"Found single recording for {conversation_id} in cache")
+                audio_hash = cache_entry.get("audio_hash")
+                if audio_hash:
+                    # Recursively call with audio_hash to get full conversation
+                    return await self.get_conversation_by_id(audio_hash)
+                else:
+                    # No audio_hash, this is a standalone recording
+                    timestamp = int(cache_entry["internal_id"])
+                    transcription = await self.repository.get_transcription_by_timestamp(timestamp)
+                    if transcription:
+                        conversations = self._group_transcriptions_into_conversations([transcription])
+                        if conversations:
+                            return conversations[0]
+
+        # Fall back to loading all conversations
+        logger.debug(f"Loading all conversations to find {conversation_id}")
+        conversations = await self.get_all_conversations()
+        for conv in conversations:
+            if conv.conversation_id == conversation_id:
+                logger.debug(f"Found conversation {conversation_id}")
+                return conv
+
+        logger.warning(f"Conversation not found: {conversation_id}")
+        return None
 
     async def search_conversations(self, query: str) -> list[tuple[Conversation, list[str]]]:
         """
