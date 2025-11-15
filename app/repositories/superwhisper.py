@@ -199,7 +199,12 @@ class SuperwhisperRepository(TranscriptionRepository):
             raw_transcription = metadata_content.get("rawResult")
             preprocessed_transcription = metadata_content.get("result")
             llm_transcription = metadata_content.get("llmResult")
-            segments = metadata_content.get("segments")
+            raw_segments = metadata_content.get("segments")
+
+            # Normalize segment field names
+            # SuperWhisper uses 'start'/'end' but we expect 'start_time'/'end_time'
+            segments = self._normalize_segments(raw_segments) if raw_segments else None
+
             duration = metadata_content.get("duration")
             language = metadata_content.get("languageSelected")
             model_name = metadata_content.get("modelName")
@@ -284,3 +289,30 @@ class SuperwhisperRepository(TranscriptionRepository):
         except OSError:
             # If we can't read the file, return empty hash
             return ""
+
+    def _normalize_segments(self, segments: list[dict]) -> list[dict]:
+        """
+        Normalize segment field names to match our expected format.
+
+        SuperWhisper segments use 'start'/'end' but we expect 'start_time'/'end_time'.
+        This method transforms the segments to use consistent field names.
+
+        Args:
+            segments: Raw segments from SuperWhisper
+
+        Returns:
+            Normalized segments with start_time, end_time, and text fields
+        """
+        if not segments:
+            return []
+
+        normalized = []
+        for segment in segments:
+            normalized_segment = {
+                "start_time": segment.get("start", 0),
+                "end_time": segment.get("end", 0),
+                "text": segment.get("text", ""),
+            }
+            normalized.append(normalized_segment)
+
+        return normalized

@@ -201,34 +201,65 @@ function setupAudioPlayer() {
     playPauseBtn.addEventListener('click', togglePlayPause);
 
     // Backward/Forward
-    backwardBtn.addEventListener('click', () => skip(-10));
-    forwardBtn.addEventListener('click', () => skip(10));
+    backwardBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        skip(-10);
+    });
+    forwardBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        skip(10);
+    });
 
-    // Timeline - use 'change' event to only seek when user releases
+    // Timeline slider handling
     let isSeeking = false;
+    let wasPlaying = false;
+
+    // When user starts interacting with slider
     timelineSlider.addEventListener('mousedown', () => {
         isSeeking = true;
+        wasPlaying = !state.audioElement.paused;
+        if (wasPlaying) {
+            state.audioElement.pause();
+        }
     });
 
+    // Handle touch events for mobile
+    timelineSlider.addEventListener('touchstart', () => {
+        isSeeking = true;
+        wasPlaying = !state.audioElement.paused;
+        if (wasPlaying) {
+            state.audioElement.pause();
+        }
+    });
+
+    // While dragging, just update the time display
     timelineSlider.addEventListener('input', (e) => {
         if (isSeeking) {
-            // Update time display while dragging, but don't seek yet
-            const time = (e.target.value / 100) * state.audioElement.duration;
-            document.getElementById('currentTime').textContent = formatTime(time);
+            const time = (parseFloat(e.target.value) / 100) * state.audioElement.duration;
+            if (!isNaN(time) && isFinite(time)) {
+                document.getElementById('currentTime').textContent = formatTime(time);
+            }
         }
     });
 
-    timelineSlider.addEventListener('change', (e) => {
-        const time = (e.target.value / 100) * state.audioElement.duration;
-        if (!isNaN(time) && isFinite(time)) {
+    // When user releases the slider
+    const handleSeekEnd = (e) => {
+        if (!isSeeking) return;
+
+        const time = (parseFloat(e.target.value) / 100) * state.audioElement.duration;
+        if (!isNaN(time) && isFinite(time) && state.audioElement.duration > 0) {
             state.audioElement.currentTime = time;
         }
-        isSeeking = false;
-    });
 
-    timelineSlider.addEventListener('mouseup', () => {
         isSeeking = false;
-    });
+
+        if (wasPlaying) {
+            state.audioElement.play();
+        }
+    };
+
+    timelineSlider.addEventListener('mouseup', handleSeekEnd);
+    timelineSlider.addEventListener('touchend', handleSeekEnd);
 
     // Speed controls
     speedBtns.forEach(btn => {
@@ -247,14 +278,18 @@ function setupAudioPlayer() {
             updateTimeDisplay();
         }
     });
+
     state.audioElement.addEventListener('loadedmetadata', () => {
-        document.getElementById('totalTime').textContent = formatTime(state.audioElement.duration);
-        timelineSlider.max = 100;
-        timelineSlider.value = 0;
+        const duration = state.audioElement.duration;
+        if (!isNaN(duration) && isFinite(duration)) {
+            document.getElementById('totalTime').textContent = formatTime(duration);
+        }
     });
+
     state.audioElement.addEventListener('play', () => {
         playPauseBtn.textContent = '⏸';
     });
+
     state.audioElement.addEventListener('pause', () => {
         playPauseBtn.textContent = '▶';
     });
@@ -265,7 +300,12 @@ function updateAudioSource() {
     if (!state.currentConversation || !state.currentVersion) return;
 
     const audioUrl = `${API_BASE}/conversations/${state.currentConversation.conversation_id}/audio/${state.currentVersion.version_id}`;
-    state.audioElement.src = audioUrl;
+
+    // Only update if the source actually changed
+    if (state.audioElement.src !== audioUrl) {
+        state.audioElement.src = audioUrl;
+        state.audioElement.load();
+    }
 }
 
 // Toggle Play/Pause
@@ -300,14 +340,21 @@ function jumpToTimecode(time) {
 
 // Update Time Display
 function updateTimeDisplay() {
+    if (!state.audioElement) return;
+
     const currentTime = state.audioElement.currentTime;
     const duration = state.audioElement.duration;
+
+    if (isNaN(currentTime) || isNaN(duration)) return;
 
     document.getElementById('currentTime').textContent = formatTime(currentTime);
 
     const timelineSlider = document.getElementById('timelineSlider');
-    if (!isNaN(duration)) {
-        timelineSlider.value = (currentTime / duration) * 100;
+    if (timelineSlider && duration > 0) {
+        const percentage = (currentTime / duration) * 100;
+        if (isFinite(percentage)) {
+            timelineSlider.value = percentage;
+        }
     }
 }
 
