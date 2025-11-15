@@ -357,8 +357,11 @@ function updateAudioSource() {
     console.log('[Audio Player] Current src:', state.audioElement.src);
     console.log('[Audio Player] New URL:', audioUrl);
 
-    // Only update if the source actually changed
-    if (state.audioElement.src !== audioUrl) {
+    // Compare URLs properly - src returns absolute URL, so check if it ends with our relative URL
+    const currentSrc = state.audioElement.src;
+    const shouldUpdate = !currentSrc || !currentSrc.endsWith(audioUrl);
+
+    if (shouldUpdate) {
         console.log('[Audio Player] Source changed, loading new audio');
         state.audioElement.src = audioUrl;
         state.audioElement.load();
@@ -395,6 +398,24 @@ function skip(seconds) {
     const clampedTime = Math.max(0, Math.min(newTime, state.audioElement.duration));
 
     console.log('[Audio Player] Skip:', seconds, 'seconds - from:', oldTime, 'to:', clampedTime, 'readyState:', state.audioElement.readyState);
+
+    // Check if the target time is within seekable ranges
+    if (state.audioElement.seekable && state.audioElement.seekable.length > 0) {
+        let isSeekable = false;
+        for (let i = 0; i < state.audioElement.seekable.length; i++) {
+            const start = state.audioElement.seekable.start(i);
+            const end = state.audioElement.seekable.end(i);
+            console.log('[Audio Player] Seekable range', i, ':', start, 'to', end);
+            if (clampedTime >= start && clampedTime <= end) {
+                isSeekable = true;
+                break;
+            }
+        }
+        if (!isSeekable) {
+            console.warn('[Audio Player] Target time', clampedTime, 'not in seekable ranges');
+            return;
+        }
+    }
 
     try {
         // Clamp between 0 and duration
