@@ -661,16 +661,20 @@ function updateURL() {
 
 // Render Pagination Controls
 function renderPagination() {
-    const paginationContainer = document.getElementById('pagination');
+    let paginationContainer = document.getElementById('pagination');
 
     if (!paginationContainer) {
         // Create pagination container if it doesn't exist
-        const listPanel = document.querySelector('.list-panel');
+        const conversationsPanel = document.querySelector('.conversations-panel');
+        if (!conversationsPanel) {
+            console.error('Conversations panel not found');
+            return;
+        }
         const container = document.createElement('div');
         container.id = 'pagination';
         container.className = 'pagination';
-        listPanel.appendChild(container);
-        return renderPagination();
+        conversationsPanel.appendChild(container);
+        paginationContainer = container;
     }
 
     // Don't show pagination if only one page
