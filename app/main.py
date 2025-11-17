@@ -12,6 +12,8 @@ from fastapi.staticfiles import StaticFiles
 from app.api.routes import conversations, health
 from app.core.config import settings
 from app.db import init_db
+from app.repositories.superwhisper import SuperwhisperRepository
+from app.services.indexing_service import IndexingService
 
 
 logger.configure(
@@ -29,11 +31,27 @@ app = FastAPI(
     debug=settings.debug,
 )
 
+# Global indexing service instance
+indexing_service: IndexingService | None = None
+
 
 @app.on_event("startup")
 async def startup_event():
-    """Initialize database on application startup."""
+    """Initialize database and start background indexing on application startup."""
+    global indexing_service
+
+    # Initialize database schema
+    logger.info("Initializing database schema...")
     init_db()
+
+    # Start background indexing
+    logger.info("Starting background transcription indexing...")
+    repository = SuperwhisperRepository(base_directory=Path(settings.superwhisper_directory))
+    indexing_service = IndexingService(transcription_repo=repository)
+
+    # Start sync in background (non-blocking)
+    await indexing_service.start_background_sync()
+    logger.info("Background indexing started")
 
 # Add CORS middleware
 app.add_middleware(

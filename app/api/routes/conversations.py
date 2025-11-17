@@ -1,5 +1,7 @@
 """API endpoints for conversations."""
 
+import math
+from datetime import datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -9,6 +11,9 @@ from app.api.dependencies import get_transcription_service
 from app.schemas.transcription import (
     ConversationListItemSchema,
     ConversationSchema,
+    PaginatedConversationListResponse,
+    PaginatedSearchResultResponse,
+    PaginationMetadata,
     SearchResultSchema,
 )
 from app.services.transcription_service import TranscriptionService
@@ -16,29 +21,51 @@ from app.services.transcription_service import TranscriptionService
 router = APIRouter()
 
 
-@router.get("/conversations", response_model=list[ConversationListItemSchema])
+@router.get("/conversations", response_model=PaginatedConversationListResponse)
 async def list_conversations(
     service: Annotated[TranscriptionService, Depends(get_transcription_service)],
-) -> list[ConversationListItemSchema]:
+    page: Annotated[int, Query(ge=1, description="Page number (1-indexed)")] = 1,
+    page_size: Annotated[int, Query(ge=1, le=100, description="Items per page")] = 30,
+) -> PaginatedConversationListResponse:
     """
-    Get all conversations (list view).
+    Get paginated list of conversations.
+
+    Args:
+        page: Page number (1-indexed)
+        page_size: Number of items per page (max 100)
 
     Returns:
-        List of conversation summaries
+        Paginated list of conversation summaries
     """
-    conversations = await service.get_all_conversations()
+    # Get paginated results from the search index
+    results, total = await service.get_paginated_conversations(page=page, page_size=page_size)
 
-    return [
-        ConversationListItemSchema(
-            conversation_id=conv.conversation_id,
-            title=conv.title,
-            latest_timestamp=conv.latest_version.timestamp if conv.latest_version else 0,
-            version_count=len(conv.versions),
-            created_at=conv.created_at,
-            updated_at=conv.updated_at,
+    # Convert to schema
+    items = []
+    for row in results:
+        items.append(
+            ConversationListItemSchema(
+                conversation_id=row["conversation_id"],
+                title=row["title"],
+                latest_timestamp=row["timestamp"],
+                version_count=1,  # We only store latest in index, need to count if needed
+                created_at=datetime.fromisoformat(row["created_at"]) if row.get("created_at") else None,
+                updated_at=datetime.fromisoformat(row["updated_at"]) if row.get("updated_at") else None,
+            )
         )
-        for conv in conversations
-    ]
+
+    # Calculate pagination metadata
+    total_pages = math.ceil(total / page_size) if total > 0 else 0
+    pagination = PaginationMetadata(
+        page=page,
+        page_size=page_size,
+        total_items=total,
+        total_pages=total_pages,
+        has_next=page < total_pages,
+        has_prev=page > 1,
+    )
+
+    return PaginatedConversationListResponse(items=items, pagination=pagination)
 
 
 @router.get("/conversations/{conversation_id}", response_model=ConversationSchema)
@@ -129,32 +156,56 @@ async def get_conversation(
     )
 
 
-@router.get("/conversations/search", response_model=list[SearchResultSchema])
+@router.get("/conversations/search", response_model=PaginatedSearchResultResponse)
 async def search_conversations(
     q: Annotated[str, Query(min_length=1, description="Search query")],
     service: Annotated[TranscriptionService, Depends(get_transcription_service)],
-) -> list[SearchResultSchema]:
+    page: Annotated[int, Query(ge=1, description="Page number (1-indexed)")] = 1,
+    page_size: Annotated[int, Query(ge=1, le=100, description="Items per page")] = 30,
+) -> PaginatedSearchResultResponse:
     """
-    Search for conversations matching a query.
+    Search for conversations matching a query with pagination.
+
+    Uses SQLite FTS5 for fast full-text search with highlighting.
 
     Args:
         q: Search query string
+        page: Page number (1-indexed)
+        page_size: Number of items per page (max 100)
 
     Returns:
-        List of search results with matching snippets
+        Paginated search results with matching snippets
     """
-    results = await service.search_conversations(q)
+    # Use the new FTS5-based search with pagination
+    results, total = await service.search_conversations_paginated(
+        query=q, page=page, page_size=page_size
+    )
 
-    return [
-        SearchResultSchema(
-            conversation_id=conv.conversation_id,
-            title=conv.title,
-            matches=matches[:10],  # Limit to 10 matches per conversation
-            latest_timestamp=conv.latest_version.timestamp if conv.latest_version else 0,
-            version_count=len(conv.versions),
+    # Convert to schema
+    items = []
+    for row in results:
+        items.append(
+            SearchResultSchema(
+                conversation_id=row["conversation_id"],
+                title=row["title"],
+                matches=row.get("match_snippets", []),
+                latest_timestamp=row["timestamp"],
+                version_count=1,  # We only store latest in index
+            )
         )
-        for conv, matches in results
-    ]
+
+    # Calculate pagination metadata
+    total_pages = math.ceil(total / page_size) if total > 0 else 0
+    pagination = PaginationMetadata(
+        page=page,
+        page_size=page_size,
+        total_items=total,
+        total_pages=total_pages,
+        has_next=page < total_pages,
+        has_prev=page > 1,
+    )
+
+    return PaginatedSearchResultResponse(items=items, pagination=pagination)
 
 
 @router.get("/conversations/{conversation_id}/audio/{version_id}")

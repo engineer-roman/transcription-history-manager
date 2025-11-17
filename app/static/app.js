@@ -7,6 +7,13 @@ const state = {
     searchResults: [],
     isSearching: false,
     audioElement: null,
+    // Pagination state
+    currentPage: 1,
+    pageSize: 30,
+    totalPages: 0,
+    totalItems: 0,
+    hasNext: false,
+    hasPrev: false,
 };
 
 // API Base URL
@@ -19,7 +26,30 @@ document.addEventListener('DOMContentLoaded', () => {
 
 async function initializeApp() {
     setupEventListeners();
-    await loadConversations();
+    loadPageFromURL();
+
+    // Load either search results or conversations based on URL
+    if (state.isSearching) {
+        await handleSearch(state.currentPage);
+    } else {
+        await loadConversations(state.currentPage);
+    }
+}
+
+// Load page number from URL
+function loadPageFromURL() {
+    const params = new URLSearchParams(window.location.search);
+    const page = parseInt(params.get('page')) || 1;
+    const query = params.get('q') || '';
+
+    state.currentPage = page;
+
+    if (query) {
+        document.getElementById('searchInput').value = query;
+        document.getElementById('resetSearchBtn').classList.add('visible');
+        state.searchQuery = query;
+        state.isSearching = true;
+    }
 }
 
 // Setup Event Listeners
@@ -49,17 +79,33 @@ function setupEventListeners() {
 }
 
 // Load Conversations
-async function loadConversations() {
+async function loadConversations(page = state.currentPage) {
     try {
         showLoading();
-        const response = await fetch(`${API_BASE}/conversations`);
+        state.currentPage = page;
+
+        // Build URL with pagination
+        const url = `${API_BASE}/conversations?page=${page}&page_size=${state.pageSize}`;
+        const response = await fetch(url);
 
         if (!response.ok) {
             throw new Error('Failed to load conversations');
         }
 
-        state.conversations = await response.json();
+        const data = await response.json();
+
+        // Update state with paginated data
+        state.conversations = data.items;
+        state.totalPages = data.pagination.total_pages;
+        state.totalItems = data.pagination.total_items;
+        state.hasNext = data.pagination.has_next;
+        state.hasPrev = data.pagination.has_prev;
+
+        // Update URL
+        updateURL();
+
         renderConversationsList(state.conversations);
+        renderPagination();
     } catch (error) {
         console.error('Error loading conversations:', error);
         showError('Failed to load conversations. Please try again.');
@@ -517,7 +563,7 @@ function setupTabs() {
 }
 
 // Handle Search
-async function handleSearch() {
+async function handleSearch(page = 1) {
     const searchInput = document.getElementById('searchInput');
     const query = searchInput.value.trim();
 
@@ -526,15 +572,30 @@ async function handleSearch() {
     try {
         state.searchQuery = query;
         state.isSearching = true;
+        state.currentPage = page;
 
-        const response = await fetch(`${API_BASE}/conversations/search?q=${encodeURIComponent(query)}`);
+        // Build URL with pagination
+        const url = `${API_BASE}/conversations/search?q=${encodeURIComponent(query)}&page=${page}&page_size=${state.pageSize}`;
+        const response = await fetch(url);
 
         if (!response.ok) {
             throw new Error('Search failed');
         }
 
-        state.searchResults = await response.json();
+        const data = await response.json();
+
+        // Update state with paginated search results
+        state.searchResults = data.items;
+        state.totalPages = data.pagination.total_pages;
+        state.totalItems = data.pagination.total_items;
+        state.hasNext = data.pagination.has_next;
+        state.hasPrev = data.pagination.has_prev;
+
+        // Update URL
+        updateURL();
+
         renderSearchResults();
+        renderPagination();
     } catch (error) {
         console.error('Error searching:', error);
         showError('Search failed. Please try again.');
@@ -558,7 +619,7 @@ function renderSearchResults() {
                 <span class="version-badge">${result.version_count} version${result.version_count !== 1 ? 's' : ''}</span>
             </div>
             ${result.matches.slice(0, 3).map(match => `
-                <div class="search-match">${highlightSearchTerm(escapeHtml(match), state.searchQuery)}</div>
+                <div class="search-match">${match}</div>
             `).join('')}
         </div>
     `).join('');
@@ -571,6 +632,7 @@ function clearSearch() {
     state.searchQuery = '';
     state.isSearching = false;
     state.searchResults = [];
+    state.currentPage = 1;
 
     const searchInput = document.getElementById('searchInput');
     const resetSearchBtn = document.getElementById('resetSearchBtn');
@@ -578,7 +640,113 @@ function clearSearch() {
     searchInput.value = '';
     resetSearchBtn.classList.remove('visible');
 
-    loadConversations();
+    loadConversations(1);
+}
+
+// Update URL with current state
+function updateURL() {
+    const params = new URLSearchParams();
+
+    if (state.currentPage > 1) {
+        params.set('page', state.currentPage);
+    }
+
+    if (state.searchQuery) {
+        params.set('q', state.searchQuery);
+    }
+
+    const newURL = params.toString() ? `?${params.toString()}` : window.location.pathname;
+    window.history.pushState({}, '', newURL);
+}
+
+// Render Pagination Controls
+function renderPagination() {
+    const paginationContainer = document.getElementById('pagination');
+
+    if (!paginationContainer) {
+        // Create pagination container if it doesn't exist
+        const listPanel = document.querySelector('.list-panel');
+        const container = document.createElement('div');
+        container.id = 'pagination';
+        container.className = 'pagination';
+        listPanel.appendChild(container);
+        return renderPagination();
+    }
+
+    // Don't show pagination if only one page
+    if (state.totalPages <= 1) {
+        paginationContainer.innerHTML = '';
+        return;
+    }
+
+    const pages = [];
+    const maxVisible = 5;
+    let startPage = Math.max(1, state.currentPage - Math.floor(maxVisible / 2));
+    let endPage = Math.min(state.totalPages, startPage + maxVisible - 1);
+
+    // Adjust start if we're near the end
+    if (endPage - startPage < maxVisible - 1) {
+        startPage = Math.max(1, endPage - maxVisible + 1);
+    }
+
+    // Previous button
+    const prevBtn = state.hasPrev
+        ? `<button class="pagination-btn" onclick="navigateToPage(${state.currentPage - 1})">← Prev</button>`
+        : `<button class="pagination-btn" disabled>← Prev</button>`;
+
+    // First page if not visible
+    if (startPage > 1) {
+        pages.push(`<button class="pagination-btn" onclick="navigateToPage(1)">1</button>`);
+        if (startPage > 2) {
+            pages.push(`<span class="pagination-ellipsis">...</span>`);
+        }
+    }
+
+    // Page numbers
+    for (let i = startPage; i <= endPage; i++) {
+        if (i === state.currentPage) {
+            pages.push(`<button class="pagination-btn active">${i}</button>`);
+        } else {
+            pages.push(`<button class="pagination-btn" onclick="navigateToPage(${i})">${i}</button>`);
+        }
+    }
+
+    // Last page if not visible
+    if (endPage < state.totalPages) {
+        if (endPage < state.totalPages - 1) {
+            pages.push(`<span class="pagination-ellipsis">...</span>`);
+        }
+        pages.push(`<button class="pagination-btn" onclick="navigateToPage(${state.totalPages})">${state.totalPages}</button>`);
+    }
+
+    // Next button
+    const nextBtn = state.hasNext
+        ? `<button class="pagination-btn" onclick="navigateToPage(${state.currentPage + 1})">Next →</button>`
+        : `<button class="pagination-btn" disabled>Next →</button>`;
+
+    const html = `
+        <div class="pagination-info">
+            Showing ${(state.currentPage - 1) * state.pageSize + 1}-${Math.min(state.currentPage * state.pageSize, state.totalItems)} of ${state.totalItems}
+        </div>
+        <div class="pagination-controls">
+            ${prevBtn}
+            ${pages.join('')}
+            ${nextBtn}
+        </div>
+    `;
+
+    paginationContainer.innerHTML = html;
+}
+
+// Navigate to specific page
+function navigateToPage(page) {
+    if (page < 1 || page > state.totalPages) return;
+
+    if (state.isSearching) {
+        handleSearch(page);
+    } else {
+        loadConversations(page);
+    }
 }
 
 // Highlight Active Conversation

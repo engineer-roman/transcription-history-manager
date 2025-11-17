@@ -3,9 +3,11 @@
 import hashlib
 import logging
 from datetime import datetime
+from typing import Optional
 
 from app.models.transcription import AudioVersion, Conversation, TranscriptionMetadata
 from app.repositories.base import TranscriptionRepository
+from app.repositories.transcription_index import TranscriptionIndexRepo
 
 logger = logging.getLogger(__name__)
 
@@ -13,14 +15,20 @@ logger = logging.getLogger(__name__)
 class TranscriptionService:
     """Service for managing transcription business logic."""
 
-    def __init__(self, repository: TranscriptionRepository) -> None:
+    def __init__(
+        self,
+        repository: TranscriptionRepository,
+        index_repo: Optional[TranscriptionIndexRepo] = None,
+    ) -> None:
         """
         Initialize the service.
 
         Args:
             repository: Transcription repository instance
+            index_repo: Search index repository (optional)
         """
         self.repository = repository
+        self.index_repo = index_repo or TranscriptionIndexRepo()
 
     async def get_all_conversations(self) -> list[Conversation]:
         """
@@ -192,6 +200,41 @@ class TranscriptionService:
                 results.append((conversation, matches))
 
         return results
+
+    async def get_paginated_conversations(
+        self, page: int = 1, page_size: int = 30
+    ) -> tuple[list[dict], int]:
+        """
+        Get paginated list of conversations using the search index.
+
+        This is much faster than loading all conversations as it uses the SQLite index.
+
+        Args:
+            page: Page number (1-indexed)
+            page_size: Number of items per page
+
+        Returns:
+            Tuple of (list of conversation dicts, total count)
+        """
+        return self.index_repo.get_paginated_conversations(page=page, page_size=page_size)
+
+    async def search_conversations_paginated(
+        self, query: str, page: int = 1, page_size: int = 30
+    ) -> tuple[list[dict], int]:
+        """
+        Search conversations with pagination using FTS5.
+
+        This is much faster than the old search method as it uses SQLite FTS5.
+
+        Args:
+            query: Search query string
+            page: Page number (1-indexed)
+            page_size: Number of items per page
+
+        Returns:
+            Tuple of (list of search result dicts with highlights, total count)
+        """
+        return self.index_repo.search(query=query, page=page, page_size=page_size)
 
     async def get_audio_file(self, conversation_id: str, version_id: str) -> bytes:
         """
