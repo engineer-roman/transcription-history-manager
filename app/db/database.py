@@ -118,7 +118,7 @@ def init_db() -> None:
     )
 
     # Create FTS5 virtual table for full-text search
-    # FTS5 provides efficient substring matching and result highlighting
+    # Only index raw_transcription and title to avoid duplicate results
     cursor.execute(
         """
         CREATE VIRTUAL TABLE IF NOT EXISTS transcription_fts USING fts5(
@@ -126,8 +126,6 @@ def init_db() -> None:
             version_id UNINDEXED,
             title,
             raw_transcription,
-            preprocessed_transcription,
-            llm_transcription,
             content='transcription_index',
             content_rowid='rowid',
             tokenize='porter unicode61 remove_diacritics 2'
@@ -139,8 +137,8 @@ def init_db() -> None:
     cursor.execute(
         """
         CREATE TRIGGER IF NOT EXISTS transcription_index_ai AFTER INSERT ON transcription_index BEGIN
-            INSERT INTO transcription_fts(rowid, conversation_id, version_id, title, raw_transcription, preprocessed_transcription, llm_transcription)
-            VALUES (new.rowid, new.conversation_id, new.version_id, new.title, new.raw_transcription, new.preprocessed_transcription, new.llm_transcription);
+            INSERT INTO transcription_fts(rowid, conversation_id, version_id, title, raw_transcription)
+            VALUES (new.rowid, new.conversation_id, new.version_id, new.title, new.raw_transcription);
         END
         """
     )
@@ -148,8 +146,8 @@ def init_db() -> None:
     cursor.execute(
         """
         CREATE TRIGGER IF NOT EXISTS transcription_index_ad AFTER DELETE ON transcription_index BEGIN
-            INSERT INTO transcription_fts(transcription_fts, rowid, conversation_id, version_id, title, raw_transcription, preprocessed_transcription, llm_transcription)
-            VALUES ('delete', old.rowid, old.conversation_id, old.version_id, old.title, old.raw_transcription, old.preprocessed_transcription, old.llm_transcription);
+            INSERT INTO transcription_fts(transcription_fts, rowid, conversation_id, version_id, title, raw_transcription)
+            VALUES ('delete', old.rowid, old.conversation_id, old.version_id, old.title, old.raw_transcription);
         END
         """
     )
@@ -157,10 +155,10 @@ def init_db() -> None:
     cursor.execute(
         """
         CREATE TRIGGER IF NOT EXISTS transcription_index_au AFTER UPDATE ON transcription_index BEGIN
-            INSERT INTO transcription_fts(transcription_fts, rowid, conversation_id, version_id, title, raw_transcription, preprocessed_transcription, llm_transcription)
-            VALUES ('delete', old.rowid, old.conversation_id, old.version_id, old.title, old.raw_transcription, old.preprocessed_transcription, old.llm_transcription);
-            INSERT INTO transcription_fts(rowid, conversation_id, version_id, title, raw_transcription, preprocessed_transcription, llm_transcription)
-            VALUES (new.rowid, new.conversation_id, new.version_id, new.title, new.raw_transcription, new.preprocessed_transcription, new.llm_transcription);
+            INSERT INTO transcription_fts(transcription_fts, rowid, conversation_id, version_id, title, raw_transcription)
+            VALUES ('delete', old.rowid, old.conversation_id, old.version_id, old.title, old.raw_transcription);
+            INSERT INTO transcription_fts(rowid, conversation_id, version_id, title, raw_transcription)
+            VALUES (new.rowid, new.conversation_id, new.version_id, new.title, new.raw_transcription);
         END
         """
     )

@@ -43,14 +43,22 @@ async def list_conversations(
     # Convert to schema
     items = []
     for row in results:
+        # Use created_at if available, otherwise convert timestamp to datetime
+        created_at = None
+        if row.get("created_at"):
+            created_at = datetime.fromisoformat(row["created_at"])
+        elif row.get("timestamp"):
+            # Convert Unix timestamp to datetime
+            created_at = datetime.fromtimestamp(row["timestamp"])
+
         items.append(
             ConversationListItemSchema(
                 conversation_id=row["conversation_id"],
                 title=row["title"],
                 latest_timestamp=row["timestamp"],
                 version_count=1,  # We only store latest in index, need to count if needed
-                created_at=datetime.fromisoformat(row["created_at"]) if row.get("created_at") else None,
-                updated_at=datetime.fromisoformat(row["updated_at"]) if row.get("updated_at") else None,
+                created_at=created_at,
+                updated_at=created_at,  # Use same as created_at for display
             )
         )
 

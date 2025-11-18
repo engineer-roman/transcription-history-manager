@@ -81,10 +81,10 @@ function setupEventListeners() {
 
 // Setup scroll listener for infinite scrolling
 function setupScrollListener() {
-    const listContainer = document.getElementById('conversationsList');
+    const scrollContainer = document.querySelector('.conversations-panel');
 
     let scrollTimeout;
-    listContainer.addEventListener('scroll', () => {
+    scrollContainer.addEventListener('scroll', () => {
         // Debounce scroll events
         clearTimeout(scrollTimeout);
         scrollTimeout = setTimeout(handleScroll, 100);
@@ -95,10 +95,10 @@ function setupScrollListener() {
 async function handleScroll() {
     if (state.isLoadingPage) return;
 
-    const listContainer = document.getElementById('conversationsList');
-    const scrollTop = listContainer.scrollTop;
-    const scrollHeight = listContainer.scrollHeight;
-    const clientHeight = listContainer.clientHeight;
+    const scrollContainer = document.querySelector('.conversations-panel');
+    const scrollTop = scrollContainer.scrollTop;
+    const scrollHeight = scrollContainer.scrollHeight;
+    const clientHeight = scrollContainer.clientHeight;
 
     // Near bottom - load next page
     if (scrollHeight - scrollTop - clientHeight < state.scrollThreshold) {

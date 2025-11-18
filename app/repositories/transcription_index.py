@@ -155,15 +155,14 @@ class TranscriptionIndexRepo:
         conn = get_db()
         cursor = conn.cursor()
 
-        # Prepare FTS5 query - prioritize raw_transcription, then search other fields
-        # FTS5 column-specific syntax: {column:query} searches specific column
-        # We'll search raw_transcription with boost, then fall back to other fields
+        # Prepare FTS5 query - search only raw_transcription and title
+        # This prevents duplicate results from different transcription versions
         if " " in query:
             # Phrase search - wrap in quotes
-            fts_query = f'raw_transcription:"{query}" OR preprocessed_transcription:"{query}" OR title:"{query}" OR llm_transcription:"{query}"'
+            fts_query = f'raw_transcription:"{query}" OR title:"{query}"'
         else:
-            # Word search - search raw first, then others
-            fts_query = f'raw_transcription:{query} OR preprocessed_transcription:{query} OR title:{query} OR llm_transcription:{query}'
+            # Word search
+            fts_query = f'raw_transcription:{query} OR title:{query}'
 
         # Get total count of matching conversations
         cursor.execute(
@@ -178,7 +177,7 @@ class TranscriptionIndexRepo:
         total = cursor.fetchone()[0]
 
         # Get paginated search results with highlights
-        # Note: snippet() column indices: 0=conversation_id, 1=version_id, 2=title, 3=raw, 4=preprocessed, 5=llm
+        # Note: snippet() column indices: 0=conversation_id, 1=version_id, 2=title, 3=raw_transcription
         offset = (page - 1) * page_size
         cursor.execute(
             """
@@ -194,8 +193,6 @@ class TranscriptionIndexRepo:
                 ti.updated_at,
                 snippet(transcription_fts, 2, '<mark>', '</mark>', '...', 32) as title_snippet,
                 snippet(transcription_fts, 3, '<mark>', '</mark>', '...', 64) as raw_snippet,
-                snippet(transcription_fts, 4, '<mark>', '</mark>', '...', 64) as preprocessed_snippet,
-                snippet(transcription_fts, 5, '<mark>', '</mark>', '...', 64) as llm_snippet,
                 bm25(transcription_fts) as rank
             FROM transcription_index ti
             INNER JOIN transcription_fts fts ON ti.rowid = fts.rowid
@@ -212,13 +209,13 @@ class TranscriptionIndexRepo:
         results = []
         for row in rows:
             result = dict(row)
-            # Collect non-empty snippets
+            # Collect non-empty snippets (only title and raw now)
             snippets = []
-            for key in ["title_snippet", "raw_snippet", "preprocessed_snippet", "llm_snippet"]:
+            for key in ["title_snippet", "raw_snippet"]:
                 snippet = result.pop(key, None)
                 if snippet and snippet.strip() and "<mark>" in snippet:
                     snippets.append(snippet)
-            result["match_snippets"] = snippets[:5]  # Limit to 5 snippets
+            result["match_snippets"] = snippets[:3]  # Limit to 3 snippets
             results.append(result)
 
         return results, total
