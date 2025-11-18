@@ -155,9 +155,15 @@ class TranscriptionIndexRepo:
         conn = get_db()
         cursor = conn.cursor()
 
-        # Prepare FTS5 query - wrap in quotes for phrase search, or use as-is for word search
-        # FTS5 automatically handles substring matching with the porter tokenizer
-        fts_query = f'"{query}"' if " " in query else query
+        # Prepare FTS5 query - prioritize raw_transcription, then search other fields
+        # FTS5 column-specific syntax: {column:query} searches specific column
+        # We'll search raw_transcription with boost, then fall back to other fields
+        if " " in query:
+            # Phrase search - wrap in quotes
+            fts_query = f'raw_transcription:"{query}" OR preprocessed_transcription:"{query}" OR title:"{query}" OR llm_transcription:"{query}"'
+        else:
+            # Word search - search raw first, then others
+            fts_query = f'raw_transcription:{query} OR preprocessed_transcription:{query} OR title:{query} OR llm_transcription:{query}'
 
         # Get total count of matching conversations
         cursor.execute(
@@ -172,6 +178,7 @@ class TranscriptionIndexRepo:
         total = cursor.fetchone()[0]
 
         # Get paginated search results with highlights
+        # Note: snippet() column indices: 0=conversation_id, 1=version_id, 2=title, 3=raw, 4=preprocessed, 5=llm
         offset = (page - 1) * page_size
         cursor.execute(
             """

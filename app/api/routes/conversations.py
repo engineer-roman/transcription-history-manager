@@ -68,6 +68,58 @@ async def list_conversations(
     return PaginatedConversationListResponse(items=items, pagination=pagination)
 
 
+@router.get("/conversations/search", response_model=PaginatedSearchResultResponse)
+async def search_conversations(
+    q: Annotated[str, Query(min_length=1, description="Search query")],
+    service: Annotated[TranscriptionService, Depends(get_transcription_service)],
+    page: Annotated[int, Query(ge=1, description="Page number (1-indexed)")] = 1,
+    page_size: Annotated[int, Query(ge=1, le=100, description="Items per page")] = 30,
+) -> PaginatedSearchResultResponse:
+    """
+    Search for conversations matching a query with pagination.
+
+    Uses SQLite FTS5 for fast full-text search with highlighting.
+
+    Args:
+        q: Search query string
+        page: Page number (1-indexed)
+        page_size: Number of items per page (max 100)
+
+    Returns:
+        Paginated search results with matching snippets
+    """
+    # Use the new FTS5-based search with pagination
+    results, total = await service.search_conversations_paginated(
+        query=q, page=page, page_size=page_size
+    )
+
+    # Convert to schema
+    items = []
+    for row in results:
+        items.append(
+            SearchResultSchema(
+                conversation_id=row["conversation_id"],
+                title=row["title"],
+                matches=row.get("match_snippets", []),
+                latest_timestamp=row["timestamp"],
+                version_count=1,  # We only store latest in index
+            )
+        )
+
+    # Calculate pagination metadata
+    total_pages = math.ceil(total / page_size) if total > 0 else 0
+    pagination = PaginationMetadata(
+        page=page,
+        page_size=page_size,
+        total_items=total,
+        total_pages=total_pages,
+        has_next=page < total_pages,
+        has_prev=page > 1,
+    )
+
+    return PaginatedSearchResultResponse(items=items, pagination=pagination)
+
+
 @router.get("/conversations/{conversation_id}", response_model=ConversationSchema)
 async def get_conversation(
     conversation_id: str,
@@ -154,58 +206,6 @@ async def get_conversation(
         created_at=conversation.created_at,
         updated_at=conversation.updated_at,
     )
-
-
-@router.get("/conversations/search", response_model=PaginatedSearchResultResponse)
-async def search_conversations(
-    q: Annotated[str, Query(min_length=1, description="Search query")],
-    service: Annotated[TranscriptionService, Depends(get_transcription_service)],
-    page: Annotated[int, Query(ge=1, description="Page number (1-indexed)")] = 1,
-    page_size: Annotated[int, Query(ge=1, le=100, description="Items per page")] = 30,
-) -> PaginatedSearchResultResponse:
-    """
-    Search for conversations matching a query with pagination.
-
-    Uses SQLite FTS5 for fast full-text search with highlighting.
-
-    Args:
-        q: Search query string
-        page: Page number (1-indexed)
-        page_size: Number of items per page (max 100)
-
-    Returns:
-        Paginated search results with matching snippets
-    """
-    # Use the new FTS5-based search with pagination
-    results, total = await service.search_conversations_paginated(
-        query=q, page=page, page_size=page_size
-    )
-
-    # Convert to schema
-    items = []
-    for row in results:
-        items.append(
-            SearchResultSchema(
-                conversation_id=row["conversation_id"],
-                title=row["title"],
-                matches=row.get("match_snippets", []),
-                latest_timestamp=row["timestamp"],
-                version_count=1,  # We only store latest in index
-            )
-        )
-
-    # Calculate pagination metadata
-    total_pages = math.ceil(total / page_size) if total > 0 else 0
-    pagination = PaginationMetadata(
-        page=page,
-        page_size=page_size,
-        total_items=total,
-        total_pages=total_pages,
-        has_next=page < total_pages,
-        has_prev=page > 1,
-    )
-
-    return PaginatedSearchResultResponse(items=items, pagination=pagination)
 
 
 @router.get("/conversations/{conversation_id}/audio/{version_id}")
