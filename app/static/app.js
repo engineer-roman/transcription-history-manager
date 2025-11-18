@@ -20,10 +20,8 @@ const state = {
     // Date/time filter state
     dateFilter: {
         enabled: false,
-        startDate: null,
-        startTime: '00:00',
-        endDate: null,
-        endTime: '23:59'
+        startDateTime: null,
+        endDateTime: null
     }
 };
 
@@ -65,23 +63,17 @@ function loadSearchFromURL() {
 // Load filter parameters from URL
 function loadFilterFromURL() {
     const params = new URLSearchParams(window.location.search);
-    const startDate = params.get('startDate');
-    const startTime = params.get('startTime');
-    const endDate = params.get('endDate');
-    const endTime = params.get('endTime');
+    const startDateTime = params.get('startDateTime');
+    const endDateTime = params.get('endDateTime');
 
-    if (startDate || endDate) {
+    if (startDateTime || endDateTime) {
         state.dateFilter.enabled = true;
-        state.dateFilter.startDate = startDate;
-        state.dateFilter.startTime = startTime || '00:00';
-        state.dateFilter.endDate = endDate;
-        state.dateFilter.endTime = endTime || '23:59';
+        state.dateFilter.startDateTime = startDateTime;
+        state.dateFilter.endDateTime = endDateTime;
 
         // Update UI
-        if (startDate) document.getElementById('startDate').value = startDate;
-        if (startTime) document.getElementById('startTime').value = startTime;
-        if (endDate) document.getElementById('endDate').value = endDate;
-        if (endTime) document.getElementById('endTime').value = endTime;
+        if (startDateTime) document.getElementById('startDateTime').value = startDateTime;
+        if (endDateTime) document.getElementById('endDateTime').value = endDateTime;
     }
 }
 
@@ -117,23 +109,19 @@ function setupEventListeners() {
 
 // Apply date/time filter
 async function applyDateFilter() {
-    const startDate = document.getElementById('startDate').value;
-    const startTime = document.getElementById('startTime').value;
-    const endDate = document.getElementById('endDate').value;
-    const endTime = document.getElementById('endTime').value;
+    const startDateTime = document.getElementById('startDateTime').value;
+    const endDateTime = document.getElementById('endDateTime').value;
 
-    // At least one date must be provided
-    if (!startDate && !endDate) {
-        alert('Please select at least a start or end date');
+    // At least one datetime must be provided
+    if (!startDateTime && !endDateTime) {
+        alert('Please select at least a start or end date/time');
         return;
     }
 
     // Update state
     state.dateFilter.enabled = true;
-    state.dateFilter.startDate = startDate;
-    state.dateFilter.startTime = startTime || '00:00';
-    state.dateFilter.endDate = endDate;
-    state.dateFilter.endTime = endTime || '23:59';
+    state.dateFilter.startDateTime = startDateTime;
+    state.dateFilter.endDateTime = endDateTime;
 
     // Update URL
     updateURL();
@@ -151,16 +139,12 @@ async function applyDateFilter() {
 async function clearDateFilter() {
     // Reset state
     state.dateFilter.enabled = false;
-    state.dateFilter.startDate = null;
-    state.dateFilter.startTime = '00:00';
-    state.dateFilter.endDate = null;
-    state.dateFilter.endTime = '23:59';
+    state.dateFilter.startDateTime = null;
+    state.dateFilter.endDateTime = null;
 
     // Clear UI
-    document.getElementById('startDate').value = '';
-    document.getElementById('startTime').value = '00:00';
-    document.getElementById('endDate').value = '';
-    document.getElementById('endTime').value = '23:59';
+    document.getElementById('startDateTime').value = '';
+    document.getElementById('endDateTime').value = '';
 
     // Update URL
     updateURL();
@@ -222,17 +206,13 @@ async function handleScroll() {
 function buildFilterParams() {
     const params = new URLSearchParams();
 
-    if (state.dateFilter.startDate) {
-        // Combine date and time into a timestamp
-        const startDateTime = `${state.dateFilter.startDate}T${state.dateFilter.startTime}:00`;
-        const startTimestamp = Math.floor(new Date(startDateTime).getTime() / 1000);
+    if (state.dateFilter.startDateTime) {
+        const startTimestamp = Math.floor(new Date(state.dateFilter.startDateTime).getTime() / 1000);
         params.set('start_timestamp', startTimestamp);
     }
 
-    if (state.dateFilter.endDate) {
-        // Combine date and time into a timestamp
-        const endDateTime = `${state.dateFilter.endDate}T${state.dateFilter.endTime}:59`;
-        const endTimestamp = Math.floor(new Date(endDateTime).getTime() / 1000);
+    if (state.dateFilter.endDateTime) {
+        const endTimestamp = Math.floor(new Date(state.dateFilter.endDateTime).getTime() / 1000);
         params.set('end_timestamp', endTimestamp);
     }
 
@@ -991,13 +971,11 @@ function updateURL() {
     }
 
     if (state.dateFilter.enabled) {
-        if (state.dateFilter.startDate) {
-            params.set('startDate', state.dateFilter.startDate);
-            params.set('startTime', state.dateFilter.startTime);
+        if (state.dateFilter.startDateTime) {
+            params.set('startDateTime', state.dateFilter.startDateTime);
         }
-        if (state.dateFilter.endDate) {
-            params.set('endDate', state.dateFilter.endDate);
-            params.set('endTime', state.dateFilter.endTime);
+        if (state.dateFilter.endDateTime) {
+            params.set('endDateTime', state.dateFilter.endDateTime);
         }
     }
 

@@ -34,20 +34,16 @@
             <div class="filter-section">
                 <h3 class="filter-title">Filter by Date & Time</h3>
                 <div class="filter-controls">
-                    <div class="date-range">
-                        <div class="input-group">
-                            <label for="startDate">From:</label>
-                            <input type="date" id="startDate" class="date-input">
-                            <input type="time" id="startTime" class="time-input" value="00:00">
-                        </div>
-                        <div class="input-group">
-                            <label for="endDate">To:</label>
-                            <input type="date" id="endDate" class="date-input">
-                            <input type="time" id="endTime" class="time-input" value="23:59">
-                        </div>
+                    <div class="datetime-group">
+                        <label for="startDateTime">From:</label>
+                        <input type="datetime-local" id="startDateTime" class="datetime-input">
+                    </div>
+                    <div class="datetime-group">
+                        <label for="endDateTime">To:</label>
+                        <input type="datetime-local" id="endDateTime" class="datetime-input">
                     </div>
                     <div class="filter-actions">
-                        <button id="applyFilterBtn" class="btn btn-primary btn-sm">Apply Filter</button>
+                        <button id="applyFilterBtn" class="btn btn-primary btn-sm">Apply</button>
                         <button id="clearFilterBtn" class="btn btn-secondary btn-sm">Clear</button>
                     </div>
                 </div>
