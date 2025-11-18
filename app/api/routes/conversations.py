@@ -26,6 +26,8 @@ async def list_conversations(
     service: Annotated[TranscriptionService, Depends(get_transcription_service)],
     page: Annotated[int, Query(ge=1, description="Page number (1-indexed)")] = 1,
     page_size: Annotated[int, Query(ge=1, le=100, description="Items per page")] = 30,
+    start_timestamp: Annotated[int | None, Query(description="Start timestamp filter (Unix timestamp)")] = None,
+    end_timestamp: Annotated[int | None, Query(description="End timestamp filter (Unix timestamp)")] = None,
 ) -> PaginatedConversationListResponse:
     """
     Get paginated list of conversations.
@@ -33,12 +35,19 @@ async def list_conversations(
     Args:
         page: Page number (1-indexed)
         page_size: Number of items per page (max 100)
+        start_timestamp: Optional start timestamp filter (Unix timestamp)
+        end_timestamp: Optional end timestamp filter (Unix timestamp)
 
     Returns:
         Paginated list of conversation summaries
     """
     # Get paginated results from the search index
-    results, total = await service.get_paginated_conversations(page=page, page_size=page_size)
+    results, total = await service.get_paginated_conversations(
+        page=page,
+        page_size=page_size,
+        start_timestamp=start_timestamp,
+        end_timestamp=end_timestamp,
+    )
 
     # Convert to schema
     items = []
@@ -82,6 +91,8 @@ async def search_conversations(
     service: Annotated[TranscriptionService, Depends(get_transcription_service)],
     page: Annotated[int, Query(ge=1, description="Page number (1-indexed)")] = 1,
     page_size: Annotated[int, Query(ge=1, le=100, description="Items per page")] = 30,
+    start_timestamp: Annotated[int | None, Query(description="Start timestamp filter (Unix timestamp)")] = None,
+    end_timestamp: Annotated[int | None, Query(description="End timestamp filter (Unix timestamp)")] = None,
 ) -> PaginatedSearchResultResponse:
     """
     Search for conversations matching a query with pagination.
@@ -92,13 +103,19 @@ async def search_conversations(
         q: Search query string
         page: Page number (1-indexed)
         page_size: Number of items per page (max 100)
+        start_timestamp: Optional start timestamp filter (Unix timestamp)
+        end_timestamp: Optional end timestamp filter (Unix timestamp)
 
     Returns:
         Paginated search results with matching snippets
     """
     # Use the new FTS5-based search with pagination
     results, total = await service.search_conversations_paginated(
-        query=q, page=page, page_size=page_size
+        query=q,
+        page=page,
+        page_size=page_size,
+        start_timestamp=start_timestamp,
+        end_timestamp=end_timestamp,
     )
 
     # Convert to schema
