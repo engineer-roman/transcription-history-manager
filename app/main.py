@@ -39,6 +39,7 @@ indexing_service: IndexingService | None = None
 async def startup_event():
     """Initialize database and start background indexing on application startup."""
     global indexing_service
+    from app.api.dependencies import set_indexing_service
 
     # Initialize database schema
     logger.info("Initializing database schema...")
@@ -48,6 +49,9 @@ async def startup_event():
     logger.info("Starting background transcription indexing...")
     repository = SuperwhisperRepository(base_directory=Path(settings.superwhisper_directory))
     indexing_service = IndexingService(transcription_repo=repository)
+
+    # Register indexing service globally for API access
+    set_indexing_service(indexing_service)
 
     # Start sync in background (non-blocking)
     await indexing_service.start_background_sync()

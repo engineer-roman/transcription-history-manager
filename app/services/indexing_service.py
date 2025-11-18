@@ -81,6 +81,71 @@ class IndexingService:
         """Check if initial sync has completed."""
         return self._sync_complete
 
+    async def ensure_sync(self, force: bool = False) -> bool:
+        """
+        Ensure the index is synchronized with the file system.
+
+        Checks if there are new recordings and triggers sync if needed.
+        This is safe to call multiple times and will skip if already syncing.
+
+        Args:
+            force: Force a full re-sync even if counts match
+
+        Returns:
+            True if sync was performed, False if skipped
+        """
+        # Skip if already syncing
+        if self._is_syncing:
+            logger.debug("Sync already in progress, skipping ensure_sync")
+            return False
+
+        # Check if sync is needed
+        if not force:
+            needs_sync = await self._check_sync_needed()
+            if not needs_sync:
+                logger.debug("Index is up-to-date, skipping sync")
+                return False
+
+        logger.info("Index out of sync, triggering re-sync")
+        await self._sync_all_transcriptions()
+        return True
+
+    async def _check_sync_needed(self) -> bool:
+        """
+        Check if synchronization is needed by comparing file system and database.
+
+        Returns:
+            True if sync is needed, False if index is up-to-date
+        """
+        try:
+            # Count directories in file system
+            from pathlib import Path
+            base_dir = self.transcription_repo.base_directory
+            if not base_dir.exists():
+                return False
+
+            dir_count = 0
+            for subdir in base_dir.iterdir():
+                if subdir.is_dir():
+                    try:
+                        int(subdir.name)
+                        dir_count += 1
+                    except ValueError:
+                        continue
+
+            # Count indexed conversations in database
+            db_count = self.index_repo.get_count()
+
+            logger.debug(f"Sync check: {dir_count} directories vs {db_count} indexed conversations")
+
+            # Need sync if counts don't match
+            return dir_count != db_count
+
+        except Exception as e:
+            logger.error(f"Error checking sync status: {e}", exc_info=True)
+            # On error, trigger sync to be safe
+            return True
+
     async def _sync_all_transcriptions(self) -> None:
         """
         Sync all transcriptions from file system to search index.
