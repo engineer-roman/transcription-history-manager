@@ -30,6 +30,28 @@
     <div class="main-container">
         <!-- Left Panel: Conversations List -->
         <aside class="conversations-panel">
+            <!-- Date/Time Filter -->
+            <div class="filter-section">
+                <h3 class="filter-title">Filter by Date & Time</h3>
+                <div class="filter-controls">
+                    <div class="date-range">
+                        <div class="input-group">
+                            <label for="startDate">From:</label>
+                            <input type="date" id="startDate" class="date-input">
+                            <input type="time" id="startTime" class="time-input" value="00:00">
+                        </div>
+                        <div class="input-group">
+                            <label for="endDate">To:</label>
+                            <input type="date" id="endDate" class="date-input">
+                            <input type="time" id="endTime" class="time-input" value="23:59">
+                        </div>
+                    </div>
+                    <div class="filter-actions">
+                        <button id="applyFilterBtn" class="btn btn-primary btn-sm">Apply Filter</button>
+                        <button id="clearFilterBtn" class="btn btn-secondary btn-sm">Clear</button>
+                    </div>
+                </div>
+            </div>
             <div id="conversationsList" class="conversations-list">
                 <!-- Items will be loaded here dynamically -->
             </div>

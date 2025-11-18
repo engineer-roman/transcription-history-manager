@@ -202,7 +202,11 @@ class TranscriptionService:
         return results
 
     async def get_paginated_conversations(
-        self, page: int = 1, page_size: int = 30
+        self,
+        page: int = 1,
+        page_size: int = 30,
+        start_timestamp: Optional[int] = None,
+        end_timestamp: Optional[int] = None,
     ) -> tuple[list[dict], int]:
         """
         Get paginated list of conversations using the search index.
@@ -212,14 +216,26 @@ class TranscriptionService:
         Args:
             page: Page number (1-indexed)
             page_size: Number of items per page
+            start_timestamp: Optional start timestamp filter (Unix timestamp)
+            end_timestamp: Optional end timestamp filter (Unix timestamp)
 
         Returns:
             Tuple of (list of conversation dicts, total count)
         """
-        return self.index_repo.get_paginated_conversations(page=page, page_size=page_size)
+        return self.index_repo.get_paginated_conversations(
+            page=page,
+            page_size=page_size,
+            start_timestamp=start_timestamp,
+            end_timestamp=end_timestamp,
+        )
 
     async def search_conversations_paginated(
-        self, query: str, page: int = 1, page_size: int = 30
+        self,
+        query: str,
+        page: int = 1,
+        page_size: int = 30,
+        start_timestamp: Optional[int] = None,
+        end_timestamp: Optional[int] = None,
     ) -> tuple[list[dict], int]:
         """
         Search conversations with pagination using FTS5.
@@ -230,11 +246,19 @@ class TranscriptionService:
             query: Search query string
             page: Page number (1-indexed)
             page_size: Number of items per page
+            start_timestamp: Optional start timestamp filter (Unix timestamp)
+            end_timestamp: Optional end timestamp filter (Unix timestamp)
 
         Returns:
             Tuple of (list of search result dicts with highlights, total count)
         """
-        return self.index_repo.search(query=query, page=page, page_size=page_size)
+        return self.index_repo.search(
+            query=query,
+            page=page,
+            page_size=page_size,
+            start_timestamp=start_timestamp,
+            end_timestamp=end_timestamp,
+        )
 
     async def get_audio_file(self, conversation_id: str, version_id: str) -> bytes:
         """

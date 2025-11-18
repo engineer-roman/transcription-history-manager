@@ -17,6 +17,14 @@ const state = {
     maxLoadedPage: 1,
     isLoadingPage: false,
     scrollThreshold: 200, // pixels from top/bottom to trigger load
+    // Date/time filter state
+    dateFilter: {
+        enabled: false,
+        startDate: null,
+        startTime: '00:00',
+        endDate: null,
+        endTime: '23:59'
+    }
 };
 
 // API Base URL
@@ -31,6 +39,7 @@ async function initializeApp() {
     setupEventListeners();
     setupScrollListener();
     loadSearchFromURL();
+    loadFilterFromURL();
 
     // Load either search results or conversations based on URL
     if (state.isSearching) {
@@ -53,14 +62,41 @@ function loadSearchFromURL() {
     }
 }
 
+// Load filter parameters from URL
+function loadFilterFromURL() {
+    const params = new URLSearchParams(window.location.search);
+    const startDate = params.get('startDate');
+    const startTime = params.get('startTime');
+    const endDate = params.get('endDate');
+    const endTime = params.get('endTime');
+
+    if (startDate || endDate) {
+        state.dateFilter.enabled = true;
+        state.dateFilter.startDate = startDate;
+        state.dateFilter.startTime = startTime || '00:00';
+        state.dateFilter.endDate = endDate;
+        state.dateFilter.endTime = endTime || '23:59';
+
+        // Update UI
+        if (startDate) document.getElementById('startDate').value = startDate;
+        if (startTime) document.getElementById('startTime').value = startTime;
+        if (endDate) document.getElementById('endDate').value = endDate;
+        if (endTime) document.getElementById('endTime').value = endTime;
+    }
+}
+
 // Setup Event Listeners
 function setupEventListeners() {
     const searchBtn = document.getElementById('searchBtn');
     const resetSearchBtn = document.getElementById('resetSearchBtn');
     const searchInput = document.getElementById('searchInput');
+    const applyFilterBtn = document.getElementById('applyFilterBtn');
+    const clearFilterBtn = document.getElementById('clearFilterBtn');
 
     searchBtn.addEventListener('click', handleSearch);
     resetSearchBtn.addEventListener('click', clearSearch);
+    applyFilterBtn.addEventListener('click', applyDateFilter);
+    clearFilterBtn.addEventListener('click', clearDateFilter);
 
     // Search on Enter key
     searchInput.addEventListener('keypress', (e) => {
@@ -77,6 +113,65 @@ function setupEventListeners() {
             resetSearchBtn.classList.remove('visible');
         }
     });
+}
+
+// Apply date/time filter
+async function applyDateFilter() {
+    const startDate = document.getElementById('startDate').value;
+    const startTime = document.getElementById('startTime').value;
+    const endDate = document.getElementById('endDate').value;
+    const endTime = document.getElementById('endTime').value;
+
+    // At least one date must be provided
+    if (!startDate && !endDate) {
+        alert('Please select at least a start or end date');
+        return;
+    }
+
+    // Update state
+    state.dateFilter.enabled = true;
+    state.dateFilter.startDate = startDate;
+    state.dateFilter.startTime = startTime || '00:00';
+    state.dateFilter.endDate = endDate;
+    state.dateFilter.endTime = endTime || '23:59';
+
+    // Update URL
+    updateURL();
+
+    // Clear and reload
+    clearList();
+    if (state.isSearching) {
+        await loadSearchPage(1);
+    } else {
+        await loadPage(1);
+    }
+}
+
+// Clear date/time filter
+async function clearDateFilter() {
+    // Reset state
+    state.dateFilter.enabled = false;
+    state.dateFilter.startDate = null;
+    state.dateFilter.startTime = '00:00';
+    state.dateFilter.endDate = null;
+    state.dateFilter.endTime = '23:59';
+
+    // Clear UI
+    document.getElementById('startDate').value = '';
+    document.getElementById('startTime').value = '00:00';
+    document.getElementById('endDate').value = '';
+    document.getElementById('endTime').value = '23:59';
+
+    // Update URL
+    updateURL();
+
+    // Clear and reload
+    clearList();
+    if (state.isSearching) {
+        await loadSearchPage(1);
+    } else {
+        await loadPage(1);
+    }
 }
 
 // Setup scroll listener for infinite scrolling
@@ -123,6 +218,27 @@ async function handleScroll() {
     }
 }
 
+// Build filter parameters for URL
+function buildFilterParams() {
+    const params = new URLSearchParams();
+
+    if (state.dateFilter.startDate) {
+        // Combine date and time into a timestamp
+        const startDateTime = `${state.dateFilter.startDate}T${state.dateFilter.startTime}:00`;
+        const startTimestamp = Math.floor(new Date(startDateTime).getTime() / 1000);
+        params.set('start_timestamp', startTimestamp);
+    }
+
+    if (state.dateFilter.endDate) {
+        // Combine date and time into a timestamp
+        const endDateTime = `${state.dateFilter.endDate}T${state.dateFilter.endTime}:59`;
+        const endTimestamp = Math.floor(new Date(endDateTime).getTime() / 1000);
+        params.set('end_timestamp', endTimestamp);
+    }
+
+    return params.toString();
+}
+
 // Show loading indicator
 function showLoadingIndicator(position = 'bottom') {
     const listContainer = document.getElementById('conversationsList');
@@ -149,8 +265,15 @@ async function loadPage(page, prepend = false) {
         state.isLoadingPage = true;
         showLoadingIndicator(prepend ? 'top' : 'bottom');
 
-        // Build URL with pagination
-        const url = `${API_BASE}/conversations?page=${page}&page_size=${state.pageSize}`;
+        // Build URL with pagination and optional date filter
+        let url = `${API_BASE}/conversations?page=${page}&page_size=${state.pageSize}`;
+
+        // Add date filter parameters if enabled
+        if (state.dateFilter.enabled) {
+            const params = buildFilterParams();
+            url += `&${params}`;
+        }
+
         const response = await fetch(url);
 
         if (!response.ok) {
@@ -737,8 +860,15 @@ async function loadSearchPage(page, prepend = false) {
         state.isLoadingPage = true;
         showLoadingIndicator(prepend ? 'top' : 'bottom');
 
-        // Build URL with pagination
-        const url = `${API_BASE}/conversations/search?q=${encodeURIComponent(state.searchQuery)}&page=${page}&page_size=${state.pageSize}`;
+        // Build URL with pagination and optional date filter
+        let url = `${API_BASE}/conversations/search?q=${encodeURIComponent(state.searchQuery)}&page=${page}&page_size=${state.pageSize}`;
+
+        // Add date filter parameters if enabled
+        if (state.dateFilter.enabled) {
+            const params = buildFilterParams();
+            url += `&${params}`;
+        }
+
         const response = await fetch(url);
 
         if (!response.ok) {
@@ -858,6 +988,17 @@ function updateURL() {
 
     if (state.searchQuery) {
         params.set('q', state.searchQuery);
+    }
+
+    if (state.dateFilter.enabled) {
+        if (state.dateFilter.startDate) {
+            params.set('startDate', state.dateFilter.startDate);
+            params.set('startTime', state.dateFilter.startTime);
+        }
+        if (state.dateFilter.endDate) {
+            params.set('endDate', state.dateFilter.endDate);
+            params.set('endTime', state.dateFilter.endTime);
+        }
     }
 
     const newURL = params.toString() ? `?${params.toString()}` : window.location.pathname;

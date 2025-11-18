@@ -85,7 +85,11 @@ class TranscriptionIndexRepo:
         conn.close()
 
     def get_paginated_conversations(
-        self, page: int = 1, page_size: int = 30
+        self,
+        page: int = 1,
+        page_size: int = 30,
+        start_timestamp: Optional[int] = None,
+        end_timestamp: Optional[int] = None,
     ) -> tuple[list[dict], int]:
         """
         Get paginated list of latest conversations.
@@ -93,6 +97,8 @@ class TranscriptionIndexRepo:
         Args:
             page: Page number (1-indexed)
             page_size: Number of items per page
+            start_timestamp: Optional start timestamp filter (Unix timestamp)
+            end_timestamp: Optional end timestamp filter (Unix timestamp)
 
         Returns:
             Tuple of (list of conversation dicts, total count)
@@ -100,20 +106,35 @@ class TranscriptionIndexRepo:
         conn = get_db()
         cursor = conn.cursor()
 
+        # Build WHERE clause with timestamp filters
+        where_clauses = ["is_latest = 1"]
+        params = []
+
+        if start_timestamp is not None:
+            where_clauses.append("timestamp >= ?")
+            params.append(start_timestamp)
+
+        if end_timestamp is not None:
+            where_clauses.append("timestamp <= ?")
+            params.append(end_timestamp)
+
+        where_clause = " AND ".join(where_clauses)
+
         # Get total count
         cursor.execute(
-            """
+            f"""
             SELECT COUNT(DISTINCT conversation_id)
             FROM transcription_index
-            WHERE is_latest = 1
-            """
+            WHERE {where_clause}
+            """,
+            params,
         )
         total = cursor.fetchone()[0]
 
         # Get paginated results
         offset = (page - 1) * page_size
         cursor.execute(
-            """
+            f"""
             SELECT
                 conversation_id,
                 version_id,
@@ -125,11 +146,11 @@ class TranscriptionIndexRepo:
                 created_at,
                 updated_at
             FROM transcription_index
-            WHERE is_latest = 1
+            WHERE {where_clause}
             ORDER BY timestamp DESC
             LIMIT ? OFFSET ?
             """,
-            (page_size, offset),
+            params + [page_size, offset],
         )
 
         rows = cursor.fetchall()
@@ -139,7 +160,12 @@ class TranscriptionIndexRepo:
         return results, total
 
     def search(
-        self, query: str, page: int = 1, page_size: int = 30
+        self,
+        query: str,
+        page: int = 1,
+        page_size: int = 30,
+        start_timestamp: Optional[int] = None,
+        end_timestamp: Optional[int] = None,
     ) -> tuple[list[dict], int]:
         """
         Full-text search across transcriptions with pagination.
@@ -148,6 +174,8 @@ class TranscriptionIndexRepo:
             query: Search query string
             page: Page number (1-indexed)
             page_size: Number of items per page
+            start_timestamp: Optional start timestamp filter (Unix timestamp)
+            end_timestamp: Optional end timestamp filter (Unix timestamp)
 
         Returns:
             Tuple of (list of search result dicts with highlights, total count)
@@ -164,15 +192,29 @@ class TranscriptionIndexRepo:
             # Word search
             fts_query = f'raw_transcription:{query} OR title:{query}'
 
+        # Build WHERE clause with timestamp filters
+        where_clauses = ["transcription_fts MATCH ?"]
+        params = [fts_query]
+
+        if start_timestamp is not None:
+            where_clauses.append("ti.timestamp >= ?")
+            params.append(start_timestamp)
+
+        if end_timestamp is not None:
+            where_clauses.append("ti.timestamp <= ?")
+            params.append(end_timestamp)
+
+        where_clause = " AND ".join(where_clauses)
+
         # Get total count of matching conversations
         cursor.execute(
-            """
+            f"""
             SELECT COUNT(DISTINCT ti.conversation_id)
             FROM transcription_index ti
             INNER JOIN transcription_fts fts ON ti.rowid = fts.rowid
-            WHERE transcription_fts MATCH ?
+            WHERE {where_clause}
             """,
-            (fts_query,),
+            params,
         )
         total = cursor.fetchone()[0]
 
@@ -180,7 +222,7 @@ class TranscriptionIndexRepo:
         # Note: snippet() column indices: 0=conversation_id, 1=version_id, 2=title, 3=raw_transcription
         offset = (page - 1) * page_size
         cursor.execute(
-            """
+            f"""
             SELECT DISTINCT
                 ti.conversation_id,
                 ti.version_id,
@@ -196,11 +238,11 @@ class TranscriptionIndexRepo:
                 bm25(transcription_fts) as rank
             FROM transcription_index ti
             INNER JOIN transcription_fts fts ON ti.rowid = fts.rowid
-            WHERE transcription_fts MATCH ?
+            WHERE {where_clause}
             ORDER BY rank, ti.timestamp DESC
             LIMIT ? OFFSET ?
             """,
-            (fts_query, page_size, offset),
+            params + [page_size, offset],
         )
 
         rows = cursor.fetchall()
