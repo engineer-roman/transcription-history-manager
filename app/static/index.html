@@ -127,11 +127,23 @@
                 <div class="timecodes-list"></div>
             </div>
             <div id="llmTab" class="tab-pane">
-                <div class="llm-content"></div>
+                <div class="llm-content-wrapper">
+                    <button id="copyMarkdownBtn" class="btn-copy-markdown" title="Copy markdown">
+                        <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                            <path d="M11 1H3C2.45 1 2 1.45 2 2V11H3V2H11V1ZM13 3H6C5.45 3 5 3.45 5 4V14C5 14.55 5.45 15 6 15H13C13.55 15 14 14.55 14 14V4C14 3.45 13.55 3 13 3ZM13 14H6V4H13V14Z" fill="currentColor"/>
+                        </svg>
+                        Copy
+                    </button>
+                    <div class="llm-content"></div>
+                </div>
             </div>
         </div>
     </template>
 
+    <!-- Markdown Parser -->
+    <script src="https://cdn.jsdelivr.net/npm/marked@11.1.1/marked.min.js"></script>
+    <!-- DOMPurify for sanitization -->
+    <script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.8/dist/purify.min.js"></script>
     <script src="/static/app.js"></script>
 </body>
 </html>
