@@ -1,5 +1,6 @@
 """API endpoints for conversations."""
 
+import logging
 import math
 from datetime import datetime
 from typing import Annotated
@@ -7,7 +8,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse, Response
 
-from app.api.dependencies import get_transcription_service
+from app.api.dependencies import get_indexing_service, get_transcription_service
 from app.schemas.transcription import (
     ConversationListItemSchema,
     ConversationSchema,
@@ -17,6 +18,8 @@ from app.schemas.transcription import (
     SearchResultSchema,
 )
 from app.services.transcription_service import TranscriptionService
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -41,6 +44,17 @@ async def list_conversations(
     Returns:
         Paginated list of conversation summaries
     """
+    # Ensure index is synchronized with file system
+    indexing_service = get_indexing_service()
+    if indexing_service:
+        try:
+            synced = await indexing_service.ensure_sync()
+            if synced:
+                logger.info("Re-indexed new recordings before listing conversations")
+        except Exception as e:
+            logger.error(f"Error during sync check: {e}", exc_info=True)
+            # Continue anyway - better to show stale data than fail completely
+
     # Get paginated results from the search index
     results, total = await service.get_paginated_conversations(
         page=page,
@@ -109,6 +123,17 @@ async def search_conversations(
     Returns:
         Paginated search results with matching snippets
     """
+    # Ensure index is synchronized with file system
+    indexing_service = get_indexing_service()
+    if indexing_service:
+        try:
+            synced = await indexing_service.ensure_sync()
+            if synced:
+                logger.info("Re-indexed new recordings before searching")
+        except Exception as e:
+            logger.error(f"Error during sync check: {e}", exc_info=True)
+            # Continue anyway - better to show stale results than fail completely
+
     # Use the new FTS5-based search with pagination
     results, total = await service.search_conversations_paginated(
         query=q,
@@ -159,6 +184,15 @@ async def get_conversation(
     Returns:
         Conversation details with all versions
     """
+    # Ensure index is synchronized with file system
+    indexing_service = get_indexing_service()
+    if indexing_service:
+        try:
+            await indexing_service.ensure_sync()
+        except Exception as e:
+            logger.error(f"Error during sync check: {e}", exc_info=True)
+            # Continue anyway - better to show stale data than fail completely
+
     conversation = await service.get_conversation_by_id(conversation_id)
 
     if not conversation:
