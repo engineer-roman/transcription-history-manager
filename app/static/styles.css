@@ -40,24 +40,12 @@ body {
 .top-bar .container {
     max-width: 100%;
     padding: 0 2rem;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    gap: 2rem;
 }
 
 .top-bar h1 {
     font-size: 1.5rem;
     font-weight: 600;
     color: var(--primary-color);
-    white-space: nowrap;
-}
-
-.search-container {
-    display: flex;
-    gap: 0.5rem;
-    flex: 1;
-    max-width: 600px;
 }
 
 .search-input-wrapper {
@@ -175,6 +163,21 @@ body {
     background: var(--surface);
     border-right: 1px solid var(--border);
     overflow-y: auto;
+}
+
+/* Search Section (in side panel) */
+.search-section {
+    padding: 0.75rem;
+    border-bottom: 2px solid var(--border);
+    background: var(--surface);
+    position: sticky;
+    top: 0;
+    z-index: 10;
+}
+
+.search-section .search-container {
+    display: flex;
+    gap: 0.5rem;
 }
 
 /* Date/Time Filter Section */
@@ -583,14 +586,5 @@ body {
 
     .conversations-panel.mobile-visible {
         display: block;
-    }
-
-    .top-bar .container {
-        flex-direction: column;
-        align-items: stretch;
-    }
-
-    .search-container {
-        max-width: 100%;
     }
 }
