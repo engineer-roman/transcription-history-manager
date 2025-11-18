@@ -452,6 +452,9 @@ function renderConversationDetails() {
     // Setup tabs
     setupTabs();
 
+    // Setup LLM copy button
+    setupLLMCopyButton();
+
     // Load content
     updateConversationContent();
 }
@@ -480,7 +483,20 @@ function updateConversationContent() {
 
     // Update LLM output
     const llmContent = document.querySelector('#llmTab .llm-content');
-    llmContent.textContent = trans.llm_output || 'No LLM output available';
+    const llmText = trans.llm_output || 'No LLM output available';
+
+    // Store original markdown in data attribute for copying
+    llmContent.dataset.markdown = llmText;
+
+    // Parse and render markdown
+    if (typeof marked !== 'undefined' && typeof DOMPurify !== 'undefined') {
+        const rawHtml = marked.parse(llmText);
+        const cleanHtml = DOMPurify.sanitize(rawHtml);
+        llmContent.innerHTML = cleanHtml;
+    } else {
+        // Fallback to plain text if libraries not loaded
+        llmContent.textContent = llmText;
+    }
 
     // Update audio source
     updateAudioSource();
@@ -811,6 +827,39 @@ function setupTabs() {
             tabPanes.forEach(pane => pane.classList.remove('active'));
             document.getElementById(`${tabName}Tab`).classList.add('active');
         });
+    });
+}
+
+// Setup LLM Copy Button
+function setupLLMCopyButton() {
+    const copyBtn = document.getElementById('copyMarkdownBtn');
+    if (!copyBtn) return;
+
+    copyBtn.addEventListener('click', async () => {
+        const llmContent = document.querySelector('#llmTab .llm-content');
+        const markdown = llmContent.dataset.markdown || llmContent.textContent;
+
+        try {
+            await navigator.clipboard.writeText(markdown);
+
+            // Visual feedback
+            const originalText = copyBtn.innerHTML;
+            copyBtn.innerHTML = `
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                    <path d="M13.5 3L5.5 11L2 7.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+                Copied!
+            `;
+            copyBtn.classList.add('copied');
+
+            setTimeout(() => {
+                copyBtn.innerHTML = originalText;
+                copyBtn.classList.remove('copied');
+            }, 2000);
+        } catch (err) {
+            console.error('Failed to copy:', err);
+            alert('Failed to copy to clipboard');
+        }
     });
 }
 
