@@ -7,6 +7,16 @@ const state = {
     searchResults: [],
     isSearching: false,
     audioElement: null,
+    // Infinite scroll state
+    pageSize: 30,
+    totalPages: 0,
+    totalItems: 0,
+    loadedPages: new Set(), // Track which pages are loaded
+    pageItems: new Map(), // Map page number -> array of items
+    minLoadedPage: 1,
+    maxLoadedPage: 1,
+    isLoadingPage: false,
+    scrollThreshold: 200, // pixels from top/bottom to trigger load
 };
 
 // API Base URL
@@ -19,7 +29,28 @@ document.addEventListener('DOMContentLoaded', () => {
 
 async function initializeApp() {
     setupEventListeners();
-    await loadConversations();
+    setupScrollListener();
+    loadSearchFromURL();
+
+    // Load either search results or conversations based on URL
+    if (state.isSearching) {
+        await handleSearch();
+    } else {
+        await loadPage(1);
+    }
+}
+
+// Load search query from URL
+function loadSearchFromURL() {
+    const params = new URLSearchParams(window.location.search);
+    const query = params.get('q') || '';
+
+    if (query) {
+        document.getElementById('searchInput').value = query;
+        document.getElementById('resetSearchBtn').classList.add('visible');
+        state.searchQuery = query;
+        state.isSearching = true;
+    }
 }
 
 // Setup Event Listeners
@@ -48,44 +79,208 @@ function setupEventListeners() {
     });
 }
 
-// Load Conversations
-async function loadConversations() {
+// Setup scroll listener for infinite scrolling
+function setupScrollListener() {
+    const scrollContainer = document.querySelector('.conversations-panel');
+
+    let scrollTimeout;
+    scrollContainer.addEventListener('scroll', () => {
+        // Debounce scroll events
+        clearTimeout(scrollTimeout);
+        scrollTimeout = setTimeout(handleScroll, 100);
+    });
+}
+
+// Handle scroll events for infinite loading
+async function handleScroll() {
+    if (state.isLoadingPage) return;
+
+    const scrollContainer = document.querySelector('.conversations-panel');
+    const scrollTop = scrollContainer.scrollTop;
+    const scrollHeight = scrollContainer.scrollHeight;
+    const clientHeight = scrollContainer.clientHeight;
+
+    // Near bottom - load next page
+    if (scrollHeight - scrollTop - clientHeight < state.scrollThreshold) {
+        if (state.maxLoadedPage < state.totalPages) {
+            if (state.isSearching) {
+                await loadNextSearchPage();
+            } else {
+                await loadNextPage();
+            }
+        }
+    }
+
+    // Near top - load previous page
+    if (scrollTop < state.scrollThreshold) {
+        if (state.minLoadedPage > 1) {
+            if (state.isSearching) {
+                await loadPreviousSearchPage();
+            } else {
+                await loadPreviousPage();
+            }
+        }
+    }
+}
+
+// Show loading indicator
+function showLoadingIndicator(position = 'bottom') {
+    const listContainer = document.getElementById('conversationsList');
+    const loadingHTML = '<div class="loading-indicator">Loading...</div>';
+
+    if (position === 'top') {
+        listContainer.insertAdjacentHTML('afterbegin', loadingHTML);
+    } else {
+        listContainer.insertAdjacentHTML('beforeend', loadingHTML);
+    }
+}
+
+// Remove loading indicator
+function removeLoadingIndicator() {
+    const indicators = document.querySelectorAll('.loading-indicator');
+    indicators.forEach(indicator => indicator.remove());
+}
+
+// Load a specific page
+async function loadPage(page, prepend = false) {
+    if (state.isLoadingPage || state.loadedPages.has(page)) return;
+
     try {
-        showLoading();
-        const response = await fetch(`${API_BASE}/conversations`);
+        state.isLoadingPage = true;
+        showLoadingIndicator(prepend ? 'top' : 'bottom');
+
+        // Build URL with pagination
+        const url = `${API_BASE}/conversations?page=${page}&page_size=${state.pageSize}`;
+        const response = await fetch(url);
 
         if (!response.ok) {
             throw new Error('Failed to load conversations');
         }
 
-        state.conversations = await response.json();
-        renderConversationsList(state.conversations);
+        const data = await response.json();
+
+        // Update state with paginated data
+        state.totalPages = data.pagination.total_pages;
+        state.totalItems = data.pagination.total_items;
+
+        // Store page items
+        state.pageItems.set(page, data.items);
+        state.loadedPages.add(page);
+
+        // Update loaded page range
+        state.minLoadedPage = Math.min(state.minLoadedPage, page);
+        state.maxLoadedPage = Math.max(state.maxLoadedPage, page);
+
+        // Render the items
+        if (prepend) {
+            prependPageItems(page, data.items);
+        } else {
+            appendPageItems(page, data.items);
+        }
+
+        // Cleanup distant pages (keep only current +/- 1 page)
+        cleanupDistantPages(page);
+
     } catch (error) {
-        console.error('Error loading conversations:', error);
+        console.error('Error loading page:', error);
         showError('Failed to load conversations. Please try again.');
+    } finally {
+        removeLoadingIndicator();
+        state.isLoadingPage = false;
     }
 }
 
-// Render Conversations List
-function renderConversationsList(conversations) {
+// Load next page and append
+async function loadNextPage() {
+    const nextPage = state.maxLoadedPage + 1;
+    await loadPage(nextPage, false);
+}
+
+// Load previous page and prepend
+async function loadPreviousPage() {
+    const listContainer = document.getElementById('conversationsList');
+    const scrollBefore = listContainer.scrollHeight;
+
+    const prevPage = state.minLoadedPage - 1;
+    await loadPage(prevPage, true);
+
+    // Preserve scroll position after prepending
+    requestAnimationFrame(() => {
+        const scrollAfter = listContainer.scrollHeight;
+        listContainer.scrollTop += (scrollAfter - scrollBefore);
+    });
+}
+
+// Append items to the list
+function appendPageItems(page, items) {
     const listContainer = document.getElementById('conversationsList');
 
-    if (conversations.length === 0) {
-        listContainer.innerHTML = '<div class="empty-state"><p>No conversations found</p></div>';
-        return;
-    }
+    const html = items.map(conv => createConversationItemHTML(conv, page)).join('');
+    listContainer.insertAdjacentHTML('beforeend', html);
+}
 
-    const html = conversations.map(conv => `
-        <div class="conversation-item" data-id="${conv.conversation_id}" onclick="loadConversationDetails('${conv.conversation_id}')">
+// Prepend items to the list
+function prependPageItems(page, items) {
+    const listContainer = document.getElementById('conversationsList');
+
+    const html = items.map(conv => createConversationItemHTML(conv, page)).join('');
+    listContainer.insertAdjacentHTML('afterbegin', html);
+}
+
+// Create HTML for a conversation item
+function createConversationItemHTML(conv, page) {
+    return `
+        <div class="conversation-item" data-id="${conv.conversation_id}" data-page="${page}" onclick="loadConversationDetails('${conv.conversation_id}')">
             <h3>${escapeHtml(conv.title)}</h3>
             <div class="conversation-meta">
                 <span>${formatDate(conv.updated_at)}</span>
                 <span class="version-badge">${conv.version_count} version${conv.version_count !== 1 ? 's' : ''}</span>
             </div>
         </div>
-    `).join('');
+    `;
+}
 
-    listContainer.innerHTML = html;
+// Cleanup pages that are too far from current view
+function cleanupDistantPages(currentPage) {
+    const pagesToKeep = new Set();
+
+    // Keep current page and +/- 1 page
+    for (let p = currentPage - 1; p <= currentPage + 1; p++) {
+        if (p >= 1 && p <= state.totalPages) {
+            pagesToKeep.add(p);
+        }
+    }
+
+    // Remove pages not in keep set
+    const listContainer = document.getElementById('conversationsList');
+
+    for (const page of state.loadedPages) {
+        if (!pagesToKeep.has(page)) {
+            // Remove items from this page
+            const itemsToRemove = listContainer.querySelectorAll(`[data-page="${page}"]`);
+            itemsToRemove.forEach(item => item.remove());
+
+            // Remove from state
+            state.loadedPages.delete(page);
+            state.pageItems.delete(page);
+        }
+    }
+
+    // Update min/max loaded pages
+    if (state.loadedPages.size > 0) {
+        state.minLoadedPage = Math.min(...state.loadedPages);
+        state.maxLoadedPage = Math.max(...state.loadedPages);
+    }
+}
+
+// Clear list and reset state
+function clearList() {
+    const listContainer = document.getElementById('conversationsList');
+    listContainer.innerHTML = '';
+    state.loadedPages.clear();
+    state.pageItems.clear();
+    state.minLoadedPage = 1;
+    state.maxLoadedPage = 1;
 }
 
 // Load Conversation Details
@@ -523,54 +718,125 @@ async function handleSearch() {
 
     if (!query) return;
 
-    try {
-        state.searchQuery = query;
-        state.isSearching = true;
+    state.searchQuery = query;
+    state.isSearching = true;
 
-        const response = await fetch(`${API_BASE}/conversations/search?q=${encodeURIComponent(query)}`);
+    // Update URL
+    updateURL();
+
+    // Clear and reload
+    clearList();
+    await loadSearchPage(1);
+}
+
+// Load a specific search page
+async function loadSearchPage(page, prepend = false) {
+    if (state.isLoadingPage || state.loadedPages.has(page)) return;
+
+    try {
+        state.isLoadingPage = true;
+        showLoadingIndicator(prepend ? 'top' : 'bottom');
+
+        // Build URL with pagination
+        const url = `${API_BASE}/conversations/search?q=${encodeURIComponent(state.searchQuery)}&page=${page}&page_size=${state.pageSize}`;
+        const response = await fetch(url);
 
         if (!response.ok) {
             throw new Error('Search failed');
         }
 
-        state.searchResults = await response.json();
-        renderSearchResults();
+        const data = await response.json();
+
+        // Update state
+        state.totalPages = data.pagination.total_pages;
+        state.totalItems = data.pagination.total_items;
+
+        // Store page items
+        state.pageItems.set(page, data.items);
+        state.loadedPages.add(page);
+
+        // Update loaded page range
+        state.minLoadedPage = Math.min(state.minLoadedPage, page);
+        state.maxLoadedPage = Math.max(state.maxLoadedPage, page);
+
+        // Render the items
+        if (prepend) {
+            prependSearchItems(page, data.items);
+        } else {
+            appendSearchItems(page, data.items);
+        }
+
+        // Cleanup distant pages
+        cleanupDistantPages(page);
+
     } catch (error) {
         console.error('Error searching:', error);
         showError('Search failed. Please try again.');
+    } finally {
+        removeLoadingIndicator();
+        state.isLoadingPage = false;
     }
 }
 
-// Render Search Results
-function renderSearchResults() {
+// Append search items to the list
+function appendSearchItems(page, items) {
     const listContainer = document.getElementById('conversationsList');
 
-    if (state.searchResults.length === 0) {
-        listContainer.innerHTML = '<div class="empty-state"><p>No results found</p></div>';
-        return;
-    }
+    const html = items.map(result => createSearchItemHTML(result, page)).join('');
+    listContainer.insertAdjacentHTML('beforeend', html);
+}
 
-    const html = state.searchResults.map(result => `
-        <div class="conversation-item" data-id="${result.conversation_id}" onclick="loadConversationDetails('${result.conversation_id}')">
+// Prepend search items to the list
+function prependSearchItems(page, items) {
+    const listContainer = document.getElementById('conversationsList');
+
+    const html = items.map(result => createSearchItemHTML(result, page)).join('');
+    listContainer.insertAdjacentHTML('afterbegin', html);
+}
+
+// Create HTML for a search result item
+function createSearchItemHTML(result, page) {
+    const matchesHTML = result.matches.slice(0, 3).map(match =>
+        `<div class="search-match">${match}</div>`
+    ).join('');
+
+    return `
+        <div class="conversation-item" data-id="${result.conversation_id}" data-page="${page}" onclick="loadConversationDetails('${result.conversation_id}')">
             <h3>${escapeHtml(result.title)}</h3>
             <div class="conversation-meta">
                 <span>${formatDate(result.latest_timestamp * 1000)}</span>
                 <span class="version-badge">${result.version_count} version${result.version_count !== 1 ? 's' : ''}</span>
             </div>
-            ${result.matches.slice(0, 3).map(match => `
-                <div class="search-match">${highlightSearchTerm(escapeHtml(match), state.searchQuery)}</div>
-            `).join('')}
+            ${matchesHTML}
         </div>
-    `).join('');
+    `;
+}
 
-    listContainer.innerHTML = html;
+// Load next search page
+async function loadNextSearchPage() {
+    const nextPage = state.maxLoadedPage + 1;
+    await loadSearchPage(nextPage, false);
+}
+
+// Load previous search page
+async function loadPreviousSearchPage() {
+    const listContainer = document.getElementById('conversationsList');
+    const scrollBefore = listContainer.scrollHeight;
+
+    const prevPage = state.minLoadedPage - 1;
+    await loadSearchPage(prevPage, true);
+
+    // Preserve scroll position
+    requestAnimationFrame(() => {
+        const scrollAfter = listContainer.scrollHeight;
+        listContainer.scrollTop += (scrollAfter - scrollBefore);
+    });
 }
 
 // Clear Search
 function clearSearch() {
     state.searchQuery = '';
     state.isSearching = false;
-    state.searchResults = [];
 
     const searchInput = document.getElementById('searchInput');
     const resetSearchBtn = document.getElementById('resetSearchBtn');
@@ -578,7 +844,24 @@ function clearSearch() {
     searchInput.value = '';
     resetSearchBtn.classList.remove('visible');
 
-    loadConversations();
+    // Update URL
+    updateURL();
+
+    // Clear and reload conversations
+    clearList();
+    loadPage(1);
+}
+
+// Update URL with current state
+function updateURL() {
+    const params = new URLSearchParams();
+
+    if (state.searchQuery) {
+        params.set('q', state.searchQuery);
+    }
+
+    const newURL = params.toString() ? `?${params.toString()}` : window.location.pathname;
+    window.history.pushState({}, '', newURL);
 }
 
 // Highlight Active Conversation

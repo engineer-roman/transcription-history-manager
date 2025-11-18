@@ -67,3 +67,28 @@ class SearchResultSchema(BaseModel):
     )
     latest_timestamp: int
     version_count: int
+
+
+class PaginationMetadata(BaseModel):
+    """Pagination metadata for paginated responses."""
+
+    page: int = Field(..., description="Current page number (1-indexed)")
+    page_size: int = Field(..., description="Number of items per page")
+    total_items: int = Field(..., description="Total number of items")
+    total_pages: int = Field(..., description="Total number of pages")
+    has_next: bool = Field(..., description="Whether there is a next page")
+    has_prev: bool = Field(..., description="Whether there is a previous page")
+
+
+class PaginatedConversationListResponse(BaseModel):
+    """Paginated response for conversation list."""
+
+    items: list[ConversationListItemSchema] = Field(..., description="List of conversations")
+    pagination: PaginationMetadata = Field(..., description="Pagination metadata")
+
+
+class PaginatedSearchResultResponse(BaseModel):
+    """Paginated response for search results."""
+
+    items: list[SearchResultSchema] = Field(..., description="List of search results")
+    pagination: PaginationMetadata = Field(..., description="Pagination metadata")

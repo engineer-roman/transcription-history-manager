@@ -480,6 +480,32 @@ body {
     margin: 1rem;
 }
 
+/* Infinite Scroll Loading Indicator */
+.loading-indicator {
+    padding: 1rem;
+    text-align: center;
+    color: var(--text-secondary);
+    font-size: 0.875rem;
+    animation: pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse {
+    0%, 100% {
+        opacity: 0.6;
+    }
+    50% {
+        opacity: 1;
+    }
+}
+
+/* Search Match Highlighting */
+.search-match mark {
+    background-color: var(--highlight);
+    padding: 0.125rem 0.25rem;
+    border-radius: 0.25rem;
+    font-weight: 500;
+}
+
 /* Responsive */
 @media (max-width: 768px) {
     .main-container {
